@@ -7,6 +7,21 @@ Two minimal C++ desktop apps that open a window saying "Hello, World!":
 
 Close the window to quit.
 
+## Download
+
+GitHub Actions builds both apps for every change to `main` and attaches them to the
+[`latest`](https://github.com/AriaMoKr/iphonehello/releases/tag/latest) prerelease, so these links
+always get the newest build. A tag like `v1.0.0` gets a release of its own.
+
+- Windows: [hello.exe](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello.exe) runs as it is.
+  For [hello_qt-windows.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-windows.zip),
+  unzip it and run `hello_qt\hello_qt.exe`.
+- Linux (x86-64): [hello_qt-linux.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux.tar.gz)
+  holds `hello_qt`, which needs Qt 6 (Ubuntu 24.04: `sudo apt install libqt6widgets6t64`).
+- macOS (Apple silicon): [hello_qt-macos.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-macos.zip)
+  holds `hello_qt.app`. It isn't notarized, so after unzipping it run
+  `xattr -dr com.apple.quarantine hello_qt.app` once, or allow it in System Settings → Privacy & Security.
+
 ## Win32 version
 
 In an MSYS2 UCRT64 shell (packages `mingw-w64-ucrt-x86_64-gcc` and `make`):
