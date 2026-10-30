@@ -39,3 +39,7 @@ Then run `./build/hello_qt.exe` on Windows, `./build/hello_qt` on Linux, or `ope
 On Windows, start it from the UCRT64 shell: it needs the Qt and GCC runtime DLLs in `/ucrt64/bin`.
 
 Tested with Qt 5.15 on Windows (MSYS2 UCRT64) and Qt 6.4 on Ubuntu 24.04; not yet on macOS.
+
+## License
+
+[MIT](LICENSE).
