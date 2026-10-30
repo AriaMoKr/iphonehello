@@ -1,0 +1,3 @@
+# Build output: make's hello.exe and CMake's build directory
+/hello.exe
+/build/
