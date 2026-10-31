@@ -161,8 +161,9 @@ jobs:
           DYLD_PRINT_LIBRARIES=1 build/hello_qt.app/Contents/MacOS/hello_qt 2> loaded.txt &
           sleep 5
           kill $!
-          grep '^dyld.*/Qt' loaded.txt
-          if grep '^dyld' loaded.txt | sed 's|^[^/]*||' | grep -Ev '^/(System|usr/lib)/|/hello_qt\.app/' > outside.txt; then
+          grep -a '^dyld.*/Qt' loaded.txt
+          { grep -a '^dyld' loaded.txt | grep -v / | head -3 || true; } | sed 's/^/::notice::A dyld line without a path: /'
+          if grep -a '^dyld' loaded.txt | grep -o '/.*' | grep -Ev '^/(System|usr/lib)/|/hello_qt\.app/' > outside.txt; then
             sed 's/^/::error::Loaded from outside the app and macOS: /' outside.txt
             exit 1
           fi
