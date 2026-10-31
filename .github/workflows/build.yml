@@ -198,15 +198,17 @@ jobs:
           persist-credentials: false
 
       # qtbase three times: Qt for iOS built for iPhones and for the Simulator on Apple silicon, and Qt for
-      # macOS, whose tools (moc and the like) the build runs. Qt's installer needs a Qt account and
-      # aqtinstall doesn't know Qt 6.12's iOS packages yet, so the archives come straight from Qt's online
-      # repository, whose Updates.xml lists each package's version and archives.
+      # macOS, whose tools (moc and the like) the build runs, each in the folder Qt's installer gives it.
+      # Qt's installer needs a Qt account and aqtinstall doesn't know Qt 6.12's iOS packages yet, so the
+      # archives come straight from Qt's online repository, whose Updates.xml lists each package's version
+      # and archives.
       - name: Install Qt
         run: |
           brew install sevenzip
           repo=https://download.qt.io/online/qtsdkrepository/mac_x64
           v=6120
-          # <folder in the repository> <package> <folder here>: the package's qtbase, unpacked
+          # <folder in the repository> <package> <folder here>: the package's qtbase, unpacked (the archive
+          # holds a whole Qt: bin, lib and so on)
           qtbase() {
             curl -fsSL --retry 3 -o Updates.xml $repo/$1/Updates.xml
             version=$(xmllint --xpath "string(//PackageUpdate[Name='$2']/Version)" Updates.xml)
@@ -219,14 +221,8 @@ jobs:
             rm qtbase.7z Updates.xml
           }
           qtbase desktop/qt6_$v/qt6_$v qt.qt6.$v.clang_64 qt/macos
-          qtbase ios/qt6_$v/qt6_${v}_device qt.qt6.$v.qtforios.device qt/ios
-          qtbase ios/qt6_$v/qt6_${v}_simulator_arm64 qt.qt6.$v.qtforios.simulator_arm64 qt/ios-simulator
-          # Each Qt is in a folder of the archive's own (6.12.0/macos and the like), the one with lib/cmake/Qt6.
-          for qt in macos ios ios-simulator; do
-            prefix=$(find $PWD/qt/$qt -path '*/lib/cmake/Qt6/Qt6Config.cmake' | sed 's,/lib/cmake/Qt6/Qt6Config\.cmake$,,')
-            echo "::notice::Qt for $qt: ${prefix#$PWD/}"
-            echo "QT_$(echo $qt | tr a-z- A-Z_)=$prefix" >> $GITHUB_ENV # QT_MACOS, QT_IOS, QT_IOS_SIMULATOR
-          done
+          qtbase ios/qt6_$v/qt6_${v}_device qt.qt6.$v.qtforios.device qt/ios_device
+          qtbase ios/qt6_$v/qt6_${v}_simulator_arm64 qt.qt6.$v.qtforios.simulator_arm64 qt/ios_simulator_arm64
 
       # The iPhone app, unsigned (the README says how it gets signed), and the Simulator's. If the build fails,
       # its first errors become annotations: unlike the job's log, those can be read without a GitHub login.
@@ -234,11 +230,11 @@ jobs:
         run: |
           # <build folder> <Qt for iOS> <SDK>
           build() {
-            cmake -B $1 -G Xcode -DCMAKE_TOOLCHAIN_FILE=$2/lib/cmake/Qt6/qt.toolchain.cmake -DQT_HOST_PATH=$QT_MACOS \
-              -DCMAKE_OSX_SYSROOT=$3 &&
+            cmake -B $1 -G Xcode -DCMAKE_TOOLCHAIN_FILE=$PWD/qt/$2/lib/cmake/Qt6/qt.toolchain.cmake \
+              -DQT_HOST_PATH=$PWD/qt/macos -DCMAKE_OSX_SYSROOT=$3 &&
               cmake --build $1 --config Release -- -quiet CODE_SIGNING_ALLOWED=NO
           }
-          if ! { build build-ios $QT_IOS iphoneos && build build-simulator $QT_IOS_SIMULATOR iphonesimulator; } 2>&1 |
+          if ! { build build-ios ios_device iphoneos && build build-simulator ios_simulator_arm64 iphonesimulator; } 2>&1 |
               tee build.txt; then
             grep -E -A 3 'error:|CMake Error' build.txt | head -n 10 | sed 's/^/::error::/'
             exit 1
