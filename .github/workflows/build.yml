@@ -162,7 +162,7 @@ jobs:
           sleep 5
           kill $!
           grep -a '^dyld.*/Qt' loaded.txt
-          { grep -a '^dyld' loaded.txt | grep -v / | head -3 || true; } | sed 's/^/::notice::A dyld line without a path: /'
+          # The paths in dyld's lines; its other lines ("move loaded to delayed: CacheDelete") have none.
           if grep -a '^dyld' loaded.txt | grep -o '/.*' | grep -Ev '^/(System|usr/lib)/|/hello_qt\.app/' > outside.txt; then
             sed 's/^/::error::Loaded from outside the app and macOS: /' outside.txt
             exit 1
