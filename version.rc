@@ -1,0 +1,36 @@
+// The version resource of hello.exe and hello_qt.exe: Windows shows it in the file's Properties (Details),
+// and Task Manager shows its FileDescription as the app's name. The build defines NAME (hello or hello_qt),
+// VERSION (0.5.0, or 0.5.0-3-gabc1234 three commits after the tag v0.5.0) and VERSION_NUMBERS (0,5,0,0 or
+// 0,5,0,3: the commits since the tag come last). They come without quotes, which windres would lose on
+// the way to its preprocessor, and xstr makes strings of them.
+#include <winver.h>
+
+#define str(s) #s
+#define xstr(s) str(s)
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VERSION_NUMBERS
+PRODUCTVERSION VERSION_NUMBERS
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0" // U.S. English, Unicode
+        BEGIN
+            VALUE "FileDescription", "Hello World"
+            VALUE "FileVersion", xstr(VERSION)
+            VALUE "InternalName", xstr(NAME)
+            VALUE "OriginalFilename", xstr(NAME) ".exe"
+            VALUE "ProductName", "Hello World"
+            VALUE "ProductVersion", xstr(VERSION)
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

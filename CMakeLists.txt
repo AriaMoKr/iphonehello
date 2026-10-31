@@ -9,12 +9,50 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
+# The version: the newest release tag at or before this commit, as git describe gives it when CMake
+# configures the build. 0.5.0 on the commit tagged v0.5.0, 0.5.0-3-g<commit> three commits later, and
+# 0.0.0 without git or such a tag.
+set(version 0.0.0)
+set(release 0.0.0) # the tag's three numbers
+set(commits 0)     # the commits since the tag
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" describe --tags --match "v[0-9]*.[0-9]*.[0-9]*"
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                    OUTPUT_VARIABLE describe OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+endif()
+if(describe MATCHES "^v([0-9]+\\.[0-9]+\\.[0-9]+)(-([0-9]+)-g[0-9a-f]+)?$")
+    set(release ${CMAKE_MATCH_1})
+    if(CMAKE_MATCH_3)
+        set(commits ${CMAKE_MATCH_3})
+    endif()
+    string(SUBSTRING "${describe}" 1 -1 version)
+else()
+    message(WARNING "git describe found no release tag (vX.Y.Z), so the version is 0.0.0")
+endif()
+message(STATUS "hello_qt version ${version}")
+
 # WIN32 and MACOSX_BUNDLE make it a GUI app: no console window on Windows, an .app on macOS and iOS.
-# On iOS, Qt's own qt_add_executable also writes the app's Info.plist and launch screen.
-if(IOS)
+# On macOS and iOS, Qt's own qt_add_executable also writes the app's Info.plist (and on iOS its launch
+# screen), with the properties set below.
+if(APPLE AND QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_add_executable(hello_qt MACOSX_BUNDLE hello_qt.cpp)
-    set_target_properties(hello_qt PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER io.github.ariamokr.iphonehello)
 else()
     add_executable(hello_qt WIN32 MACOSX_BUNDLE hello_qt.cpp)
 endif()
 target_link_libraries(hello_qt PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+
+if(APPLE)
+    # One identifier for the macOS and iPhone apps. Apple's versions are only numbers, so a build after a
+    # release has that release's version.
+    set_target_properties(hello_qt PROPERTIES
+        MACOSX_BUNDLE_GUI_IDENTIFIER io.github.ariamokr.iphonehello
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${release}
+        MACOSX_BUNDLE_BUNDLE_VERSION ${release})
+elseif(WIN32)
+    # The version resource, as for hello.exe (version.rc)
+    string(REPLACE "." "," numbers "${release}")
+    target_sources(hello_qt PRIVATE version.rc)
+    set_source_files_properties(version.rc PROPERTIES COMPILE_DEFINITIONS
+        "NAME=hello_qt;VERSION=${version};VERSION_NUMBERS=${numbers},${commits}")
+endif()

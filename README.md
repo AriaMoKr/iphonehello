@@ -33,14 +33,15 @@ is: `hello_qt\licenses`, `hello_qt.app/Contents/Resources/licenses` and `hello_q
 
 ## Win32 version
 
-In an MSYS2 UCRT64 shell (packages `mingw-w64-ucrt-x86_64-gcc` and `make`):
+In an MSYS2 UCRT64 shell (packages `mingw-w64-ucrt-x86_64-gcc`, `make`, and `mingw-w64-ucrt-x86_64-git` for
+the [version](#version)):
 
 ```bash
 make
 ./hello.exe
 ```
 
-Or without make:
+Or without make, and without a version:
 
 ```bash
 g++ -O2 -Wall -Wextra -o hello.exe hello.cpp -mwindows
@@ -50,7 +51,7 @@ g++ -O2 -Wall -Wextra -o hello.exe hello.cpp -mwindows
 
 Needs a C++ compiler, CMake, and Qt 6 or Qt 5 (Qt 6 is used if both are installed):
 
-- MSYS2 UCRT64: `pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6-base`
+- MSYS2 UCRT64: `pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-git mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6-base`
 - Debian/Ubuntu: `sudo apt install build-essential cmake qt6-base-dev`
 - macOS (Homebrew): `brew install cmake qtbase`
 
@@ -78,6 +79,14 @@ Developer Mode on (Settings → Privacy & Security).
 Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS and
 iOS it has only been built and started by GitHub Actions (Qt 6.12; for Intel Macs through Rosetta, for iOS in
 the iPhone Simulator), not yet tried on a Mac or an iPhone.
+
+## Version
+
+The apps carry the version of the newest tag `v<version>` at or before their commit, as `git describe` gives
+it: `0.5.0` on the commit tagged `v0.5.0`, and `0.5.0-3-g<commit>` three commits later. make reads it each time
+it runs, CMake when it configures the build. Without git or the tags, as in a source code zip, it is `0.0.0`.
+Windows shows it in the file's Properties → Details, macOS in Get Info, and the iPhone in Settings → General →
+iPhone Storage. Apple's versions are only numbers, so there a build after `0.5.0` still says `0.5.0`.
 
 ## License
 

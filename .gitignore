@@ -1,3 +1,5 @@
-# Build output: make's hello.exe and CMake's build directory
+# Build output: make's hello.exe with its version resource, and CMake's build directory
 /hello.exe
+/version.o
+/version.txt
 /build/
