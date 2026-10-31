@@ -1,0 +1,61 @@
+# Scans the C++ with CodeQL, GitHub's code analysis, for security holes and other bugs: on pushes to
+# main, on pull requests into main, and every Monday, as CodeQL's queries change. The findings are in
+# the repository's Security tab, under Code scanning, and a pull request's in its checks.
+#
+# CodeQL follows the compiler through a build of both apps (build mode manual), on Windows with MSYS2
+# as build.yml's windows job builds them: hello.cpp only builds on Windows, and hello_qt.cpp needs Qt.
+# Without a build (build mode none), CodeQL found neither the Windows headers nor Qt's on Windows, and
+# on Linux, with Qt installed, no Windows headers for hello.cpp.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * 1' # Mondays at 05:23 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      security-events: write # for the findings
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # build.yml's MSYS2 UCRT64 packages for the build, without those for the version and the bundle.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-qt6-base
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+
+      # CMake builds outside the checkout, so that CodeQL doesn't take the test programs CMake compiles
+      # for the repository's code.
+      - name: Build
+        run: |
+          make
+          cmake -B ../build
+          cmake --build ../build
+
+      - uses: github/codeql-action/analyze@v4

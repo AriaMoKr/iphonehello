@@ -16,6 +16,10 @@
 # Android apps get Qt from Qt's online repository (.github/qt.sh). The apps with Qt inside also get a
 # folder licenses: the licenses of Qt and the other libraries in them, and where their source code is
 # (.github/licenses.sh).
+#
+# Each release also gets SHA256SUMS, the checksums of its files. GitHub keeps an attestation of each
+# file, which says that this workflow built it and from which commit, and gh attestation verify checks
+# a download against it (README, "Checking a download").
 name: Build
 
 on:
@@ -524,8 +528,11 @@ jobs:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     needs: [windows, linux, linux-arm64, macos, macos-intel, ios, android]
     runs-on: ubuntu-latest
+    # The attestation needs id-token, for its signing certificate, and attestations, to store it.
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -533,13 +540,27 @@ jobs:
           merge-multiple: true
           skip-decompress: true
 
+      # SHA256SUMS: the checksums of all the release's files, in sha256sum's format. It is made outside
+      # dist/, so that it doesn't list itself.
+      - name: Checksums
+        run: |
+          (cd dist && sha256sum *) > SHA256SUMS
+          mv SHA256SUMS dist/
+
+      # One attestation for all the release's files, SHA256SUMS too: that this workflow run built them,
+      # from this repository and commit. It is signed with Sigstore, whose public transparency log keeps
+      # a record of it for good, and stored with the repository, where gh attestation verify finds it.
+      - uses: actions/attest@v4
+        with:
+          subject-path: dist/*
+
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each. SHA256SUMS has the files' checksums, and GitHub keeps an attestation of where each was built: the README says how to check a download."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
               gh release upload "$GITHUB_REF_NAME" dist/* --clobber

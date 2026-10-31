@@ -45,6 +45,24 @@ other libraries too. Their licenses are in a folder `licenses`, whose `README.tx
 where its source code is: `hello_qt\licenses`, `hello_qt.app/Contents/Resources/licenses`,
 `hello_qt.app/licenses`, and `assets/licenses` in the APK (an APK is a zip).
 
+### Checking a download
+
+Each release also has [SHA256SUMS](https://github.com/AriaMoKr/iphonehello/releases/download/latest/SHA256SUMS),
+the SHA-256 checksums of its files. In a folder with SHA256SUMS and your downloads, this checks them (on macOS:
+`shasum -a 256 -c --ignore-missing SHA256SUMS`):
+
+```bash
+sha256sum -c --ignore-missing SHA256SUMS
+```
+
+GitHub also keeps an attestation of each file, signed with [Sigstore](https://www.sigstore.dev/), which says
+that this repository's workflow built it and from which commit. The [GitHub CLI](https://cli.github.com/)
+checks a download against it (once signed in with `gh auth login`):
+
+```bash
+gh attestation verify hello.exe --repo AriaMoKr/iphonehello
+```
+
 ## Win32 version
 
 In an MSYS2 UCRT64 shell (packages `mingw-w64-ucrt-x86_64-gcc`, `make`, and `mingw-w64-ucrt-x86_64-git` for

@@ -26,7 +26,6 @@ Looked into on 2026-10-30. The runners named here are free for public repositori
 - [ ] **More Linux architectures** (RISC-V, POWER, IBM Z): Debian with its Qt in containers that QEMU emulates. Slow, and few would download the result.
 - [ ] **HarmonyOS:** Qt 6.12 for HarmonyOS (arm64-v8a) is in Qt's online repository; the build would also need Huawei's HarmonyOS SDK. Huawei's phones run it, mostly in China.
 - [ ] **Native versions, as hello.exe is for Windows:** SwiftUI for iPhone and Mac (Xcode on the macOS runner), Kotlin for Android (Gradle on the Linux runner), GTK 4 for Linux.
-- [ ] **Around the releases:** SHA-256 checksums and artifact attestations (actions/attest-build-provenance; `gh attestation verify` checks a download), and CodeQL for the C++ code.
 
 Not possible with Qt's packages: visionOS, tvOS and watchOS, for which Qt's online repository has nothing.
 
@@ -36,3 +35,4 @@ Not possible with Qt's packages: visionOS, tvOS and watchOS, for which Qt's onli
 - [x] **An Intel Mac test:** the macos-intel job starts the macOS app on an Intel Mac (the macos-15-intel runner, with macOS 15). The macos job still starts its Intel half through Rosetta on Apple silicon, with macOS 26.
 - [x] **Linux on ARM64:** hello_qt-linux-arm64.tar.gz, for 64-bit Raspberry Pi OS and other ARM64 Linux, built and started (offscreen) on the ubuntu-24.04-arm runner with Ubuntu's Qt. Like the x86-64 one it needs Qt 6 from the distribution (`libqt6widgets6` on Raspberry Pi OS and Debian).
 - [x] **Windows on ARM64:** hello-arm64.exe and hello_qt-windows-arm64.zip, built with MSYS2's CLANGARM64 environment (Clang, Qt 6.12) and started natively on the windows-11-arm runner, as the windows job's second leg.
+- [x] **Around the releases:** SHA256SUMS and an attestation of each file in every release (actions/attest; `gh attestation verify` checks a download), and CodeQL for the C++ code (codeql.yml).
