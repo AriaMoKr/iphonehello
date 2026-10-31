@@ -41,7 +41,7 @@ g++ -O2 -Wall -Wextra -o hello.exe hello.cpp -mwindows
 
 Needs a C++ compiler, CMake, and Qt 6 or Qt 5 (Qt 6 is used if both are installed):
 
-- MSYS2 UCRT64: `pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt5-base`
+- MSYS2 UCRT64: `pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6-base`
 - Debian/Ubuntu: `sudo apt install build-essential cmake qt6-base-dev`
 - macOS (Homebrew): `brew install cmake qtbase`
 

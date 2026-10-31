@@ -48,7 +48,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-qt5-base
+            mingw-w64-ucrt-x86_64-qt6-base
 
       - name: Build
         run: |
@@ -61,11 +61,11 @@ jobs:
       - name: Bundle hello_qt
         run: |
           app=hello_qt
-          plugins=/ucrt64/share/qt5/plugins
+          plugins=/ucrt64/share/qt6/plugins
           mkdir -p $app/platforms $app/styles
           cp build/hello_qt.exe $app/
           cp $plugins/platforms/qwindows.dll $app/platforms/
-          cp $plugins/styles/qwindowsvistastyle.dll $app/styles/
+          cp $plugins/styles/qmodernwindowsstyle.dll $app/styles/
           imports() {
             find $app -name '*.exe' -o -name '*.dll' | xargs objdump -p | awk '/DLL Name:/ { print $3 }' | sort -u
           }
@@ -90,7 +90,17 @@ jobs:
             fi
           done
           ls $app
-          zip -qr hello_qt-windows.zip $app
+
+      # Still running after 5 seconds with only Windows' folders on PATH, and with its platform plugin
+      # loaded from the folder (QT_DEBUG_PLUGINS lists the plugins Qt loads).
+      - name: Smoke test
+        run: |
+          timeout 5 env PATH="$(cygpath -S):$(cygpath -W)" QT_DEBUG_PLUGINS=1 QT_FORCE_STDERR_LOGGING=1 \
+            hello_qt/hello_qt.exe 2> plugins.txt || [ $? -eq 124 ]
+          grep 'loaded library' plugins.txt | tee loaded.txt
+          grep -q 'hello_qt/platforms/qwindows\.dll' loaded.txt
+
+      - run: zip -qr hello_qt-windows.zip hello_qt
 
       - uses: actions/upload-artifact@v7
         with:
