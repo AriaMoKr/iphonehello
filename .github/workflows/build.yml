@@ -1,4 +1,4 @@
-# Builds the apps on Windows, Linux, macOS and iOS and attaches them to a GitHub Release: a tag
+# Builds the apps on Windows, Linux, macOS, iOS and Android and attaches them to a GitHub Release: a tag
 # v<version> gets a release of its own (v1.2.0: "Hello World 1.2.0"), and a push to main that changes
 # the apps the rolling prerelease latest. The files' names never change, so the latest release's have
 # fixed addresses (README, "Download"). The apps carry the version of the newest tag at or before their
@@ -197,9 +197,10 @@ jobs:
           sh .github/licenses.sh macos build/hello_qt.app qt/macos
           codesign --force --deep --sign - build/hello_qt.app
 
-      # On Apple silicon, and through Rosetta as on an Intel Mac: still running after 10 seconds, and every
-      # library it loaded (dyld lists them) is in the app or macOS. arch passes DYLD_PRINT_LIBRARIES on (-e),
-      # which macOS would otherwise drop.
+      # On Apple silicon, and the Intel half through Rosetta: still running after 10 seconds, and every
+      # library it loaded (dyld lists them) is in the app or macOS. The macos-intel job starts the Intel half
+      # on an Intel Mac too, but with macOS 15: here it runs with macOS 26. arch passes DYLD_PRINT_LIBRARIES
+      # on (-e), which macOS would otherwise drop.
       - name: Smoke test
         run: |
           for arch in arm64 x86_64; do
@@ -220,6 +221,47 @@ jobs:
         with:
           path: hello_qt-macos.zip
           archive: false
+
+  macos-intel:
+    # The macos job's app on an Intel Mac, which runs its Intel half natively. macOS 15 is the newest macOS
+    # most Intel Macs get, and closer to the app's oldest, 14.4, than the macos job's 26.
+    needs: macos
+    runs-on: macos-15-intel
+    steps:
+      # The zip as the release has it (download-artifact would unzip it itself), unzipped by macOS's ditto.
+      - uses: actions/download-artifact@v8
+        with:
+          name: hello_qt-macos.zip
+          skip-decompress: true
+
+      - run: ditto -x -k hello_qt-macos.zip .
+
+      # Still running after 10 seconds, as Intel code, and every library it loaded (dyld lists them) is in
+      # the app or macOS. vmmap names the code a process runs: X86-64 here, X86-64 (translated) through
+      # Rosetta, ARM64 on Apple silicon. If the app quits, the end of its output becomes annotations:
+      # dyld's messages, and Qt's, which without QT_FORCE_STDERR_LOGGING would go to macOS's log instead.
+      - name: Smoke test
+        run: |
+          DYLD_PRINT_LIBRARIES=1 QT_FORCE_STDERR_LOGGING=1 hello_qt.app/Contents/MacOS/hello_qt 2> loaded.txt &
+          sleep 10
+          if ! kill -0 $!; then
+            echo "::error::hello_qt quit within 10 seconds"
+            tail -n 9 loaded.txt | sed 's/^/::error::/'
+            exit 1
+          fi
+          code=$(vmmap -summary $! | sed -n 's/^Code Type: *//p')
+          kill $!
+          if [ "$code" != X86-64 ]; then
+            echo "::error::vmmap's Code Type for hello_qt is '$code', not X86-64"
+            exit 1
+          fi
+          echo "::notice::hello_qt ran as $code on $(sysctl -n machdep.cpu.brand_string), macOS $(sw_vers -productVersion)"
+          grep -a '^dyld.*/Qt' loaded.txt
+          # The paths in dyld's lines, as in the macos job.
+          if grep -a '^dyld' loaded.txt | grep -o '/.*' | grep -Ev '^/(System|usr/lib)/|/hello_qt\.app/' > outside.txt; then
+            sed 's/^/::error::Loaded from outside the app and macOS: /' outside.txt
+            exit 1
+          fi
 
   ios:
     # Qt 6.12 for iOS is built with Xcode 26, this runner's default Xcode.
@@ -412,7 +454,7 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, macos, ios, android]
+    needs: [windows, linux, macos, macos-intel, ios, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

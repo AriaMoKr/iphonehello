@@ -99,9 +99,9 @@ That makes a debug build, which Gradle signs with your own debug key. GitHub Act
 three processors in one APK ([build.yml](.github/workflows/build.yml)).
 
 Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS, iOS
-and Android it has only been built and started by GitHub Actions (Qt 6.12; for Intel Macs through Rosetta, for
-iOS in the iPhone Simulator, for Android in the Android emulator), not yet tried on a Mac, an iPhone or an
-Android phone.
+and Android it has only been built and started by GitHub Actions (Qt 6.12; for macOS on Apple silicon with
+macOS 26 and on an Intel Mac with macOS 15, for iOS in the iPhone Simulator, for Android in the Android
+emulator), not yet tried by hand on a Mac, an iPhone or an Android phone.
 
 ## Version
 
