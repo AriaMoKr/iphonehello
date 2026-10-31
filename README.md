@@ -3,7 +3,7 @@
 Two minimal C++ GUI apps that open a window saying "Hello, World!":
 
 - `hello.cpp` uses only the Win32 API. It runs on Windows only, and `hello.exe` needs no extra DLLs.
-- `hello_qt.cpp` uses Qt Widgets, so it also builds on Linux, macOS and iOS.
+- `hello_qt.cpp` uses Qt Widgets, so it also builds on Linux, macOS, iOS and Android.
 
 Close the window to quit.
 
@@ -26,10 +26,17 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
   AltStore or Sideloadly has to sign it with your Apple Account first; with a free account it then runs for
   7 days. Or build it yourself with Xcode (below). So far it has only run in the iPhone Simulator
   ([screenshot](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-ios-simulator.png)).
+- Android 9 or later (phones and tablets with ARM, and x86-64 ones such as some Chromebooks):
+  [hello_qt-android.apk](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-android.apk).
+  Open it on the phone, and when Android asks, allow the browser or file manager to install apps. Each build is
+  signed with a key made for it, so before installing a newer build, uninstall the old one. So far it has only
+  run in the Android emulator
+  ([screenshot](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-android-emulator.png)).
 
-The Windows, macOS and iPhone downloads of the Qt app have Qt inside, and the Windows one other libraries too.
-Their licenses are in a folder `licenses`, whose `README.txt` says what each part is and where its source code
-is: `hello_qt\licenses`, `hello_qt.app/Contents/Resources/licenses` and `hello_qt.app/licenses`.
+The Windows, macOS, iPhone and Android downloads of the Qt app have Qt inside, and the Windows and Android ones
+other libraries too. Their licenses are in a folder `licenses`, whose `README.txt` says what each part is and
+where its source code is: `hello_qt\licenses`, `hello_qt.app/Contents/Resources/licenses`,
+`hello_qt.app/licenses`, and `assets/licenses` in the APK (an APK is a zip).
 
 ## Win32 version
 
@@ -76,20 +83,37 @@ open build-ios/hello_qt.xcodeproj
 On an iPhone, Xcode signs the app with your Apple Account (Signing & Capabilities → Team), and the iPhone needs
 Developer Mode on (Settings → Privacy & Security).
 
-Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS and
-iOS it has only been built and started by GitHub Actions (Qt 6.12; for Intel Macs through Rosetta, for iOS in
-the iPhone Simulator), not yet tried on a Mac or an iPhone.
+For Android you need Qt for Android and Qt for your computer from Qt's installer, the Android SDK with the
+platform for Android 16 (API level 36) and the NDK r27 (Android Studio's SDK Manager installs them), and JDK 21.
+Configure with the Qt for Android of your phone's processor (`android_arm64_v8a` for most phones) and the
+SDK's folder, then build the APK and install it with adb (the phone needs USB debugging on):
+
+```bash
+~/Qt/6.12.0/android_arm64_v8a/bin/qt-cmake -G Ninja -B build-android -DANDROID_SDK_ROOT=$HOME/Android/Sdk \
+  -DANDROID_NDK_ROOT=$HOME/Android/Sdk/ndk/27.2.12479018
+cmake --build build-android --target apk
+adb install build-android/android-build/hello_qt.apk
+```
+
+That makes a debug build, which Gradle signs with your own debug key. GitHub Actions makes a release build, for
+three processors in one APK ([build.yml](.github/workflows/build.yml)).
+
+Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS, iOS
+and Android it has only been built and started by GitHub Actions (Qt 6.12; for Intel Macs through Rosetta, for
+iOS in the iPhone Simulator, for Android in the Android emulator), not yet tried on a Mac, an iPhone or an
+Android phone.
 
 ## Version
 
 The apps carry the version of the newest tag `v<version>` at or before their commit, as `git describe` gives
 it: `0.5.0` on the commit tagged `v0.5.0`, and `0.5.0-3-g<commit>` three commits later. make reads it each time
 it runs, CMake when it configures the build. Without git or the tags, as in a source code zip, it is `0.0.0`.
-Windows shows it in the file's Properties → Details, macOS in Get Info, and the iPhone in Settings → General →
-iPhone Storage. Apple's versions are only numbers, so there a build after `0.5.0` still says `0.5.0`.
+Windows shows it in the file's Properties → Details, macOS in Get Info, the iPhone in Settings → General →
+iPhone Storage, and Android at the bottom of the app's page in Settings → Apps. Apple's versions are only
+numbers, so there a build after `0.5.0` still says `0.5.0`.
 
 ## License
 
-[MIT](LICENSE). The Qt app's downloads for Windows, macOS and iPhone also contain Qt, under the GNU LGPL
-version 3, and code from other projects, each under its own license: see their `licenses` folder
+[MIT](LICENSE). The Qt app's downloads for Windows, macOS, iPhone and Android also contain Qt, under the
+GNU LGPL version 3, and code from other projects, each under its own license: see their `licenses` folder
 ([Download](#download)).

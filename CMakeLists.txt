@@ -34,8 +34,9 @@ message(STATUS "hello_qt version ${version}")
 
 # WIN32 and MACOSX_BUNDLE make it a GUI app: no console window on Windows, an .app on macOS and iOS.
 # On macOS and iOS, Qt's own qt_add_executable also writes the app's Info.plist (and on iOS its launch
-# screen), with the properties set below.
-if(APPLE AND QT_VERSION_MAJOR GREATER_EQUAL 6)
+# screen), with the properties set below. On Android it builds the app as a library, which Qt's Java code
+# loads, and adds the target apk, which packs both into an APK.
+if((APPLE OR ANDROID) AND QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_add_executable(hello_qt MACOSX_BUNDLE hello_qt.cpp)
 else()
     add_executable(hello_qt WIN32 MACOSX_BUNDLE hello_qt.cpp)
@@ -55,4 +56,23 @@ elseif(WIN32)
     target_sources(hello_qt PRIVATE version.rc)
     set_source_files_properties(version.rc PROPERTIES COMPILE_DEFINITIONS
         "NAME=hello_qt;VERSION=${version};VERSION_NUMBERS=${numbers},${commits}")
+elseif(ANDROID)
+    # The identifier of the Apple apps. Android's version code is a number that has to grow from one
+    # version to the next: the four numbers in one, 500003 for 0.5.0 three commits later (and at least 1).
+    # The app is built for Android 16 (API level 36), the newest Android that Qt 6.12 supports, rather
+    # than for the newest SDK platform installed.
+    string(REPLACE "." ";" numbers "${release}")
+    list(GET numbers 0 major)
+    list(GET numbers 1 minor)
+    list(GET numbers 2 patch)
+    math(EXPR code "((${major} * 100 + ${minor}) * 100 + ${patch}) * 1000 + ${commits}")
+    if(code LESS 1)
+        set(code 1)
+    endif()
+    set_target_properties(hello_qt PROPERTIES
+        QT_ANDROID_PACKAGE_NAME io.github.ariamokr.iphonehello
+        QT_ANDROID_VERSION_NAME ${version}
+        QT_ANDROID_VERSION_CODE ${code}
+        QT_ANDROID_COMPILE_SDK_VERSION 36
+        QT_ANDROID_TARGET_SDK_VERSION 36)
 endif()

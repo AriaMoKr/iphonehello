@@ -2,11 +2,10 @@
 
 ## Builds
 
-- [ ] **An Android build:** hello_qt as an APK for Android phones, tablets and Chromebooks, built and tested by GitHub Actions like the iPhone app.
-  - Qt 6.12 for Android is in Qt's online repository (`all_os/android/qt6_6120/`, a package for each ABI: arm64-v8a, armeabi-v7a, x86_64 and x86). The build also needs Qt for Linux, whose tools it runs, the Android SDK, the NDK r27 and JDK 21, which the ubuntu-24.04 runner has (NDK 27.3). `.github/qt.sh` only knows Qt's `mac_x64` folder so far.
-  - Smoke test: the x86_64 APK in the Android emulator, which runs with KVM on the Linux runners, with a screenshot as for the iPhone app.
-  - Android installs only signed apps, and without a fixed key each build is signed with a new debug key, so an update installs only after the old app is uninstalled. A keystore in a repository secret fixes that (yours to create).
+- [x] **An Android build:** hello_qt-android.apk, one APK for 64-bit and 32-bit ARM and for x86-64, built by GitHub Actions with Qt 6.12 for Android and started in the Android emulator (Android 16), with a screenshot as for the iPhone app.
+- [ ] **A fixed signing key for Android:** Android installs only signed apps, and each build is signed with a key made for it, so an update installs only after the old app is uninstalled. A keystore in a repository secret fixes that (yours to create); the android job would then sign with it.
   - Google's developer verification: since 2026-09-30, certified Android devices in some regions install apps from participating stores only from verified developers, and Google means to roll it out everywhere in 2027. For an APK shared from GitHub, a free limited distribution account (up to 20 devices, no ID or fee) or Android's "advanced flow" for unverified apps may then be needed. Checked on 2026-10-30.
+- [ ] **The Android app on a real phone:** so far it has only run in the emulator.
 - [ ] **A Linux AppImage:** hello_qt for Linux with Qt inside, like the Windows and macOS apps: one file that runs on most distributions (hello_qt-linux.tar.gz needs the distribution's Qt 6).
   - linuxdeploy with its Qt plugin makes it, or appimagetool. They are AppImages themselves, which want FUSE; `APPIMAGE_EXTRACT_AND_RUN=1` runs them without it.
   - It needs a `.desktop` file and an icon, which the apps don't have yet.

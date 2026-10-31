@@ -8,6 +8,9 @@
 #                                                          hello_qt.app/Contents/Resources/licenses
 #   sh .github/licenses.sh ios hello_qt.app qt/ios_device  Qt for iOS from that folder, into
 #                                                          hello_qt.app/licenses
+#   sh .github/licenses.sh android hello_qt.apk build/android-build qt/android_arm64_v8a
+#       Qt for Android from that folder, the NDK's libc++, and the libraries that the Gradle project
+#       (androiddeployqt's android-build) compiled in with Qt's Java code, into the APK's assets/licenses
 #
 # Qt's license texts, and the list of code from other projects inside Qt, come from Qt's source code.
 set -eu
@@ -16,14 +19,16 @@ platform=$1
 app=$2
 repo=${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AriaMoKr/iphonehello}
 commit=${GITHUB_SHA:-$(git rev-parse HEAD)}
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
 case $platform in
   windows) lic=$app/licenses what="the folder ${app##*/}" ;;
   macos) lic=$app/Contents/Resources/licenses what=${app##*/} ;;
   ios) lic=$app/licenses what=${app##*/} ;;
-  *) echo "usage: $0 windows <folder>, or $0 macos|ios <app> <its Qt>" >&2; exit 2 ;;
+  android) lic=$tmp/apk/assets/licenses what="this APK" ;; # zipped into the APK at the end
+  *) echo "usage: $0 windows <folder>, $0 macos|ios <app> <its Qt>, or $0 android <APK> <its Gradle project> <its Qt>" >&2
+     exit 2 ;;
 esac
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$lic/hello_qt" "$lic/Qt"
 cp LICENSE "$lic/hello_qt/"
 cat > "$lic/README.txt" <<EOF
@@ -177,5 +182,96 @@ Qt/GPL-3.0-only.txt). Qt contains code from other projects, listed in Qt/THIRD-P
 build of Qt instead, build the app from its source code with it (its README says how). Qt's source code:
   $qtsrc
 EOF
+  ;;
+
+android)
+  # The APK's native libraries are hello_qt, Qt's libraries and plugins, and the NDK's C++ library
+  for f in $(unzip -Z1 "$app" 'lib/*'); do
+    case ${f##*/} in
+      libhello_qt_*.so | libQt6*.so | libplugins_*.so | libc++_shared.so) ;;
+      *) echo "::error::$f in the APK is neither hello_qt, Qt nor libc++"; exit 1 ;;
+    esac
+  done
+  qtv=$(sed -n 's/^QT_VERSION = //p' "$4/mkspecs/qconfig.pri")
+  qt "$qtv"
+
+  # libc++ comes from the NDK that built the app, with Android's build of LLVM (AndroidVersion.txt: its
+  # version, then the LLVM revision it is based on). Its license is LLVM's, as in LLVM's source code.
+  ndk=$ANDROID_NDK_ROOT
+  ndkv=$(sed -n 's/^Pkg\.Revision *= *//p' "$ndk/source.properties")
+  llvm=$(sed -n 1p "$ndk/toolchains/llvm/prebuilt/linux-x86_64/AndroidVersion.txt")
+  mkdir -p "$lic/libc++"
+  curl -fsSL --retry 3 -o "$lic/libc++/LICENSE.TXT" \
+    "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-${llvm%%.*}.1.0/libcxx/LICENSE.TXT"
+
+  # The libraries that Gradle compiled into the APK along with Qt's Java code: the release build's runtime
+  # classpath, with the versions Gradle settled on (after ->), but without BOMs (lists of versions, no
+  # code), and the license and source code address that each one's Maven POM names, or else the nearest
+  # parent POM that does. They are all under the Apache License 2.0 so far.
+  if ! (cd "$3" && ./gradlew -q dependencies --configuration releaseRuntimeClasspath) > "$tmp/gradle" 2>&1; then
+    echo "::error::Gradle didn't list the libraries:"
+    tail -n 5 "$tmp/gradle" | sed 's/^/::error::/'
+    exit 1
+  fi
+  awk '/--- / && !/\((c|n)\)$/ && !/[{]/ {
+         sub(/^[|+\\ ]*--- /, ""); n = split($1, c, ":"); v = c[3]; if ($2 == "->") v = $3
+         if (n >= 2 && v != "" && c[2] !~ /-bom$/) print c[1] ":" c[2] ":" v }' "$tmp/gradle" |
+    LC_ALL=C sort -u > "$tmp/maven"
+  [ -s "$tmp/maven" ] || { echo "::error::Gradle listed no libraries"; exit 1; }
+  cache=${GRADLE_USER_HOME:-$HOME/.gradle}/caches/modules-2/files-2.1
+  # pom <group> <artifact> <version>: that POM from Gradle's cache into $tmp/pom.xml, without its namespace
+  pom() {
+    f=$(find "$cache/$1/$2/$3" -name "$2-$3.pom" 2>/dev/null | head -n 1)
+    [ -n "$f" ] && sed 's/ xmlns="[^"]*"//' "$f" > "$tmp/pom.xml"
+  }
+  value() { xmllint --xpath "string($1)" "$tmp/pom.xml"; }
+  : > "$tmp/libraries"
+  while IFS=: read -r g a v; do
+    pom "$g" "$a" "$v" || { echo "::error::Gradle's cache has no POM for $g:$a:$v"; exit 1; }
+    license= url=
+    while
+      [ -n "$license" ] || license=$(value '/project/licenses/license[1]/name')
+      [ -n "$url" ] || url=$(value /project/scm/url)
+      [ -n "$url" ] || url=$(value /project/url)
+      [ -z "$license" ] || [ -z "$url" ]
+    do
+      pom "$(value /project/parent/groupId)" "$(value /project/parent/artifactId)" \
+        "$(value /project/parent/version)" || break
+    done
+    [ -n "$license" ] || { echo "::error::No license for $g:$a:$v"; exit 1; }
+    [ -n "$url" ] || { echo "::error::No source code address for $g:$a:$v"; exit 1; }
+    case $license in
+      *Apache*2.0*) ;;
+      *) echo "::error::$g:$a:$v is under $license, whose text isn't added here yet"; exit 1 ;;
+    esac
+    printf '  %s %s, %s\n    %s\n' "$g:$a" "$v" "$license" "$url" >> "$tmp/libraries"
+  done < "$tmp/maven"
+  mkdir -p "$lic/java-libraries"
+  curl -fsSL --retry 3 -o "$lic/java-libraries/LICENSE-2.0.txt" https://www.apache.org/licenses/LICENSE-2.0.txt
+
+  cat >> "$lic/README.txt" <<EOF
+lib/*/libhello_qt_*.so: hello_qt, under the MIT License. Source code: $repo
+
+lib/*/libQt6*.so and lib/*/libplugins_*.so (Qt's libraries and plugins), and Qt's Java code in classes.dex:
+Qt $qtv for Android, from Qt's online repository (built by The Qt Company), under the GNU Lesser General
+Public License version 3 (Qt/LGPL-3.0-only.txt, which adds to Qt/GPL-3.0-only.txt). Qt contains code from
+other projects, listed in Qt/THIRD-PARTY.txt. You may replace these files with your own build of Qt
+${qtv%.*}, then align and sign the APK again (zipalign and apksigner, from the Android SDK). Qt's source
+code:
+  $qtsrc
+
+lib/*/libc++_shared.so: libc++, LLVM's C++ standard library, from the Android NDK $ndkv (Android's LLVM
+$llvm), under the Apache License 2.0 with LLVM Exceptions (libc++/LICENSE.TXT). Source code:
+  https://android.googlesource.com/toolchain/llvm-project
+
+The rest of classes.dex: these libraries, which Qt's Java code uses, each with its license (the Apache
+License 2.0 is in java-libraries/LICENSE-2.0.txt) and where its source code is:
+EOF
+  cat "$tmp/libraries" >> "$lic/README.txt"
+  case $app in
+    /*) apk=$app ;;
+    *) apk=$PWD/$app ;;
+  esac
+  (cd "$tmp/apk" && zip -qr "$apk" assets)
   ;;
 esac

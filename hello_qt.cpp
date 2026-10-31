@@ -1,5 +1,5 @@
 // A minimal Qt Widgets program: one window that says "Hello, World!".
-// Same app as hello.cpp, but it also builds on Linux, macOS and iOS.
+// Same app as hello.cpp, but it also builds on Linux, macOS, iOS and Android.
 
 #include <QApplication>
 #include <QLabel>

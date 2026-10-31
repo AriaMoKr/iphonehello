@@ -9,9 +9,11 @@
 # loads, hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds
 # hello_qt.app for Apple silicon and Intel with Qt inside, signed ad hoc (not notarized).
 # hello_qt-ios.ipa is the Qt app for iPhones, unsigned, and hello_qt-ios-simulator.png shows it running
-# in the iPhone Simulator. The macOS and iPhone apps get Qt from Qt's online repository (.github/qt.sh).
-# The apps with Qt inside also get a folder licenses: the licenses of Qt and the other libraries in
-# them, and where their source code is (.github/licenses.sh).
+# in the iPhone Simulator. hello_qt-android.apk is the Qt app for Android, signed with a key made for the
+# build, and hello_qt-android-emulator.png shows it in the Android emulator. The macOS, iPhone and
+# Android apps get Qt from Qt's online repository (.github/qt.sh). The apps with Qt inside also get a
+# folder licenses: the licenses of Qt and the other libraries in them, and where their source code is
+# (.github/licenses.sh).
 name: Build
 
 on:
@@ -31,7 +33,7 @@ on:
 permissions:
   contents: read
 
-# The Qt of the macOS and iPhone apps, 6.12.0, as Qt's online repository names it (.github/qt.sh)
+# The Qt of the macOS, iPhone and Android apps, 6.12.0, as Qt's online repository names it (.github/qt.sh)
 env:
   QT: '6120'
 
@@ -173,7 +175,7 @@ jobs:
       - name: Install Qt
         run: |
           brew install sevenzip
-          sh .github/qt.sh desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.clang_64 qt/macos
+          sh .github/qt.sh mac_x64/desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.clang_64 qt/macos
 
       # For both architectures; Qt's toolchain file makes Qt's oldest macOS the app's too.
       - name: Build
@@ -236,9 +238,10 @@ jobs:
       - name: Install Qt
         run: |
           brew install sevenzip
-          sh .github/qt.sh desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.clang_64 qt/macos
-          sh .github/qt.sh ios/qt6_$QT/qt6_${QT}_device qt.qt6.$QT.qtforios.device qt/ios_device
-          sh .github/qt.sh ios/qt6_$QT/qt6_${QT}_simulator_arm64 qt.qt6.$QT.qtforios.simulator_arm64 qt/ios_simulator_arm64
+          sh .github/qt.sh mac_x64/desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.clang_64 qt/macos
+          sh .github/qt.sh mac_x64/ios/qt6_$QT/qt6_${QT}_device qt.qt6.$QT.qtforios.device qt/ios_device
+          sh .github/qt.sh mac_x64/ios/qt6_$QT/qt6_${QT}_simulator_arm64 qt.qt6.$QT.qtforios.simulator_arm64 \
+            qt/ios_simulator_arm64
 
       # The iPhone app, unsigned (the README says how it gets signed), and the Simulator's. If the build fails,
       # its first errors become annotations: unlike the job's log, those can be read without a GitHub login.
@@ -298,9 +301,118 @@ jobs:
           path: hello_qt-ios-simulator.png
           archive: false
 
+  android:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash # -eo pipefail
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Qt for Android for 64-bit ARM, 32-bit ARM and x86-64, and Qt for Linux, whose tools (moc,
+      # androiddeployqt and the like) the build runs, each in the folder Qt's installer gives it.
+      - name: Install Qt
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxml2-utils
+          sh .github/qt.sh linux_x64/desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.linux_gcc_64 qt/gcc_64
+          for abi in arm64_v8a armv7 x86_64; do
+            sh .github/qt.sh all_os/android/qt6_$QT/qt6_${QT}_$abi qt.qt6.$QT.android_$abi qt/android_$abi
+          done
+
+      # One APK for phones and tablets with 64-bit or 32-bit ARM and for x86-64 (Chromebooks, the
+      # emulator), built for release and so unsigned. The runner has the Android SDK and NDK r27, CMake and
+      # Ninja, and JDK 21, which Qt's Gradle build wants (from here on). If the build fails, its first errors
+      # and its last lines become annotations.
+      - name: Build
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> $GITHUB_ENV
+          export JAVA_HOME=$JAVA_HOME_21_X64
+          if ! { cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                   -DCMAKE_TOOLCHAIN_FILE=$PWD/qt/android_arm64_v8a/lib/cmake/Qt6/qt.toolchain.cmake \
+                   -DQT_HOST_PATH=$PWD/qt/gcc_64 -DQT_ANDROID_ABIS='arm64-v8a;armeabi-v7a;x86_64' \
+                   -DQT_PATH_ANDROID_ABI_armeabi-v7a=$PWD/qt/android_armv7 \
+                   -DQT_PATH_ANDROID_ABI_x86_64=$PWD/qt/android_x86_64 &&
+                 cmake --build build --target apk; } 2>&1 | tee build.txt; then
+            grep -E -A 3 --no-group-separator 'error:|CMake Error|FAILED:|What went wrong' build.txt |
+              head -n 8 | sed 's/^/::error::/'
+            tail -n 40 build.txt | tr -d '\r' | sed 's/%/%25/g' |
+              awk '{ s = s $0 "%0A" } END { print "::warning title=End of the build log::" s }'
+            exit 1
+          fi
+
+      # The licenses of everything in the APK go into it (assets/licenses). Then it is aligned and signed, as
+      # Android installs only signed apps: with a key made for this build, like Android's debug keys.
+      - name: Package hello_qt-android.apk
+        run: |
+          tools=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -n 1)
+          cp build/android-build/hello_qt.apk unsigned.apk
+          sh .github/licenses.sh android unsigned.apk build/android-build qt/android_arm64_v8a
+          $tools/zipalign -P 16 -f 4 unsigned.apk aligned.apk
+          keytool -genkeypair -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
+          $tools/apksigner sign --ks debug.keystore --ks-pass pass:android --out hello_qt-android.apk aligned.apk
+          $tools/apksigner verify --print-certs hello_qt-android.apk
+
+      # In the Android emulator, with Android 16 (KVM makes it fast): still running after 10 seconds, and a
+      # screenshot of it.
+      - name: Smoke test
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          bin=$ANDROID_HOME/cmdline-tools/latest/bin
+          adb=$ANDROID_HOME/platform-tools/adb
+          image='system-images;android-36;default;x86_64'
+          { yes || :; } | $bin/sdkmanager --install emulator "$image" > /dev/null
+          # avdmanager follows XDG_CONFIG_HOME, which the runner sets, but the emulator doesn't, so without
+          # ANDROID_AVD_HOME they look for the AVD in different folders.
+          export ANDROID_AVD_HOME=$HOME/.android/avd
+          mkdir -p $ANDROID_AVD_HOME
+          echo no | $bin/avdmanager create avd -n hello -k "$image" -d pixel_6 > /dev/null
+          $ANDROID_HOME/emulator/emulator -avd hello -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect > emulator.txt 2>&1 &
+          timeout 300 $adb wait-for-device
+          for i in $(seq 60); do
+            [ "$($adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ] && break
+            sleep 5
+          done
+          if [ "$($adb shell getprop sys.boot_completed | tr -d '\r')" != 1 ]; then
+            echo "::error::The emulator didn't finish starting"
+            tail -n 9 emulator.txt | sed 's/^/::error::/'
+            exit 1
+          fi
+          $adb shell wm dismiss-keyguard || :
+          id=io.github.ariamokr.iphonehello
+          if ! { $adb install hello_qt-android.apk &&
+                 $adb shell monkey -p $id -c android.intent.category.LAUNCHER 1; } > start.txt 2>&1; then
+            sed 's/^/::error::/' start.txt | tail -n 5
+            exit 1
+          fi
+          sleep 10
+          if ! $adb shell pidof $id > /dev/null; then
+            echo "::error::hello_qt quit within 10 seconds"
+            $adb logcat -d | grep -i -E 'hello_qt|qt|AndroidRuntime' | tail -n 9 | sed 's/^/::error::/'
+            exit 1
+          fi
+          $adb exec-out screencap -p > hello_qt-android-emulator.png
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: hello_qt-android.apk
+          archive: false
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: hello_qt-android-emulator.png
+          archive: false
+
   release:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, macos, ios]
+    needs: [windows, linux, macos, ios, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -317,7 +429,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, and hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator). The README says how to run them. The Windows, macOS and iPhone apps have Qt inside, and the Windows one other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
               gh release upload "$GITHUB_REF_NAME" dist/* --clobber
