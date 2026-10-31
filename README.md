@@ -18,6 +18,10 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
   unzip it and run `hello_qt\hello_qt.exe`.
 - Linux (x86-64): [hello_qt-linux.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux.tar.gz)
   holds `hello_qt`, which needs Qt 6 (Ubuntu 24.04: `sudo apt install libqt6widgets6t64`).
+- Linux (ARM64, such as 64-bit Raspberry Pi OS on a Raspberry Pi 4 or 5): [hello_qt-linux-arm64.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux-arm64.tar.gz)
+  holds `hello_qt`, which needs Qt 6 (Raspberry Pi OS and Debian 12 or 13: `sudo apt install libqt6widgets6`;
+  Ubuntu 24.04: `sudo apt install libqt6widgets6t64`). So far it has only run on GitHub's ARM64 runner, not yet
+  on a Raspberry Pi.
 - macOS 14.4 or later (Apple silicon or Intel): [hello_qt-macos.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-macos.zip)
   holds `hello_qt.app`. It isn't notarized, so after unzipping it run
   `xattr -dr com.apple.quarantine hello_qt.app` once, or allow it in System Settings → Privacy & Security.

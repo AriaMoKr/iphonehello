@@ -8,6 +8,7 @@
 # hello.exe is the Win32 app. hello_qt-windows.zip holds the Qt app with the DLLs and Qt plugins it
 # loads, hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds
 # hello_qt.app for Apple silicon and Intel with Qt inside, signed ad hoc (not notarized).
+# hello_qt-linux-arm64.tar.gz is hello_qt-linux.tar.gz for ARM64 Linux, such as 64-bit Raspberry Pi OS.
 # hello_qt-ios.ipa is the Qt app for iPhones, unsigned, and hello_qt-ios-simulator.png shows it running
 # in the iPhone Simulator. hello_qt-android.apk is the Qt app for Android, signed with a key made for the
 # build, and hello_qt-android-emulator.png shows it in the Android emulator. The macOS, iPhone and
@@ -158,6 +159,37 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           path: hello_qt-linux.tar.gz
+          archive: false
+
+  linux-arm64:
+    # The linux job on an ARM64 runner, where Ubuntu's compiler and Qt build for ARM64 and the smoke test
+    # runs the app natively.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The runner has the compiler and CMake.
+      - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+
+      - name: Build
+        run: |
+          cmake -B build
+          cmake --build build
+
+      - name: AArch64 check # file names the architecture the program is built for
+        run: file build/hello_qt | grep 'ARM aarch64'
+
+      - name: Smoke test # still running after 5 seconds, drawing offscreen
+        run: QT_QPA_PLATFORM=offscreen timeout 5 build/hello_qt || [ $? -eq 124 ]
+
+      - run: tar -czf hello_qt-linux-arm64.tar.gz -C build hello_qt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: hello_qt-linux-arm64.tar.gz
           archive: false
 
   macos:
@@ -454,7 +486,7 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, macos, macos-intel, ios, android]
+    needs: [windows, linux, linux-arm64, macos, macos-intel, ios, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -471,7 +503,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
               gh release upload "$GITHUB_REF_NAME" dist/* --clobber
