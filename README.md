@@ -53,8 +53,8 @@ cmake --build build
 Then run `./build/hello_qt.exe` on Windows, `./build/hello_qt` on Linux, or `open build/hello_qt.app` on macOS.
 On Windows, start it from the UCRT64 shell: it needs the Qt and GCC runtime DLLs in `/ucrt64/bin`.
 
-Tested with Qt 5.15 on Windows (MSYS2 UCRT64) and Qt 6.4 on Ubuntu 24.04. On macOS it has only been built
-and started by GitHub Actions (Qt 6.12 from Homebrew), not yet tried on a Mac.
+Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS it
+has only been built and started by GitHub Actions (Qt 6.12 from Homebrew), not yet tried on a Mac.
 
 ## License
 
