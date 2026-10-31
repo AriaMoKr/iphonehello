@@ -9,6 +9,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
-# WIN32 and MACOSX_BUNDLE make it a GUI app: no console window on Windows, an .app on macOS.
-add_executable(hello_qt WIN32 MACOSX_BUNDLE hello_qt.cpp)
+# WIN32 and MACOSX_BUNDLE make it a GUI app: no console window on Windows, an .app on macOS and iOS.
+# On iOS, Qt's own qt_add_executable also writes the app's Info.plist and launch screen.
+if(IOS)
+    qt_add_executable(hello_qt MACOSX_BUNDLE hello_qt.cpp)
+    set_target_properties(hello_qt PROPERTIES MACOSX_BUNDLE_GUI_IDENTIFIER io.github.ariamokr.iphonehello)
+else()
+    add_executable(hello_qt WIN32 MACOSX_BUNDLE hello_qt.cpp)
+endif()
 target_link_libraries(hello_qt PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)

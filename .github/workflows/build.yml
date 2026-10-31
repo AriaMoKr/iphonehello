@@ -1,11 +1,12 @@
-# Builds the apps on Windows, Linux and macOS and attaches them to a GitHub Release: a tag v<version>
-# gets a release of its own (v1.2.0: "Hello World 1.2.0"), and a push to main that changes the apps
-# the rolling prerelease latest. The files' names never change, so the latest release's have fixed
-# addresses (README, "Download").
+# Builds the apps on Windows, Linux, macOS and iOS and attaches them to a GitHub Release: a tag
+# v<version> gets a release of its own (v1.2.0: "Hello World 1.2.0"), and a push to main that changes
+# the apps the rolling prerelease latest. The files' names never change, so the latest release's have
+# fixed addresses (README, "Download").
 #
 # hello.exe is the Win32 app. hello_qt-windows.zip holds the Qt app with the DLLs and Qt plugins it
 # loads, hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds
-# hello_qt.app with Qt inside, signed ad hoc (not notarized).
+# hello_qt.app with Qt inside, signed ad hoc (not notarized). hello_qt-ios.ipa is the Qt app for
+# iPhones, unsigned, and hello_qt-ios-simulator.png shows it running in the iPhone Simulator.
 name: Build
 
 on:
@@ -185,9 +186,107 @@ jobs:
           path: hello_qt-macos.zip
           archive: false
 
+  ios:
+    # Qt 6.12 for iOS is built with Xcode 26, this runner's default Xcode.
+    runs-on: macos-26
+    defaults:
+      run:
+        shell: bash # -eo pipefail
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # qtbase three times: Qt for iOS built for iPhones and for the Simulator on Apple silicon, and Qt for
+      # macOS, whose tools (moc and the like) the build runs. Qt's installer needs a Qt account and
+      # aqtinstall doesn't know Qt 6.12's iOS packages yet, so the archives come straight from Qt's online
+      # repository, whose Updates.xml lists each package's version and archives.
+      - name: Install Qt
+        run: |
+          brew install sevenzip
+          repo=https://download.qt.io/online/qtsdkrepository/mac_x64
+          v=6120
+          # <folder in the repository> <package> <folder here>: the package's qtbase, unpacked
+          qtbase() {
+            curl -fsSL --retry 3 -o Updates.xml $repo/$1/Updates.xml
+            version=$(xmllint --xpath "string(//PackageUpdate[Name='$2']/Version)" Updates.xml)
+            archive=$(xmllint --xpath "string(//PackageUpdate[Name='$2']/DownloadableArchives)" Updates.xml |
+              tr , '\n' | sed 's/^ *//' | grep '^qtbase-')
+            url=$repo/$1/$2/$version$archive
+            curl -fsSL --retry 3 -o qtbase.7z $url
+            echo "$(curl -fsSL --retry 3 $url.sha1)  qtbase.7z" | shasum -c
+            7zz x -bd -o$3 qtbase.7z > /dev/null
+            rm qtbase.7z Updates.xml
+          }
+          qtbase desktop/qt6_$v/qt6_$v qt.qt6.$v.clang_64 qt/macos
+          qtbase ios/qt6_$v/qt6_${v}_device qt.qt6.$v.qtforios.device qt/ios
+          qtbase ios/qt6_$v/qt6_${v}_simulator_arm64 qt.qt6.$v.qtforios.simulator_arm64 qt/ios-simulator
+          # Each Qt is in a folder of the archive's own (6.12.0/macos and the like), the one with lib/cmake/Qt6.
+          for qt in macos ios ios-simulator; do
+            prefix=$(find $PWD/qt/$qt -path '*/lib/cmake/Qt6/Qt6Config.cmake' | sed 's,/lib/cmake/Qt6/Qt6Config\.cmake$,,')
+            echo "::notice::Qt for $qt: ${prefix#$PWD/}"
+            echo "QT_$(echo $qt | tr a-z- A-Z_)=$prefix" >> $GITHUB_ENV # QT_MACOS, QT_IOS, QT_IOS_SIMULATOR
+          done
+
+      # The iPhone app, unsigned (the README says how it gets signed), and the Simulator's. If the build fails,
+      # its first errors become annotations: unlike the job's log, those can be read without a GitHub login.
+      - name: Build
+        run: |
+          # <build folder> <Qt for iOS> <SDK>
+          build() {
+            cmake -B $1 -G Xcode -DCMAKE_TOOLCHAIN_FILE=$2/lib/cmake/Qt6/qt.toolchain.cmake -DQT_HOST_PATH=$QT_MACOS \
+              -DCMAKE_OSX_SYSROOT=$3 &&
+              cmake --build $1 --config Release -- -quiet CODE_SIGNING_ALLOWED=NO
+          }
+          if ! { build build-ios $QT_IOS iphoneos && build build-simulator $QT_IOS_SIMULATOR iphonesimulator; } 2>&1 |
+              tee build.txt; then
+            grep -E -A 3 'error:|CMake Error' build.txt | head -n 10 | sed 's/^/::error::/'
+            exit 1
+          fi
+
+      # The Simulator app in a simulated iPhone with the newest iOS here: still running after 10 seconds, and
+      # a screenshot of it.
+      - name: Smoke test
+        run: |
+          app=build-simulator/Release-iphonesimulator/hello_qt.app
+          codesign --force --sign - $app # the Simulator on Apple silicon runs only signed code
+          id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' $app/Info.plist)
+          udid=$(xcrun simctl list -j devices available | jq -r '.devices | to_entries
+            | map(select(.key | contains(".iOS-"))) | max_by(.key | [scan("[0-9]+") | tonumber]) | .value
+            | map(select(.name | startswith("iPhone"))) | .[0].udid')
+          xcrun simctl boot $udid
+          xcrun simctl bootstatus $udid
+          xcrun simctl install $udid $app
+          pid=$(SIMCTL_CHILD_QT_FORCE_STDERR_LOGGING=1 xcrun simctl launch --stderr=$PWD/app.txt $udid $id |
+            awk '{ print $NF }')
+          sleep 10
+          if ! kill -0 $pid; then
+            echo "::error::hello_qt quit within 10 seconds"
+            head -n 9 app.txt | sed 's/^/::error::/'
+            exit 1
+          fi
+          xcrun simctl io $udid screenshot hello_qt-ios-simulator.png
+
+      # An .ipa is a zip with the app in Payload/.
+      - name: Package hello_qt-ios.ipa
+        run: |
+          mkdir Payload
+          cp -R build-ios/Release-iphoneos/hello_qt.app Payload/
+          zip -qr hello_qt-ios.ipa Payload
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: hello_qt-ios.ipa
+          archive: false
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: hello_qt-ios-simulator.png
+          archive: false
+
   release:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, macos]
+    needs: [windows, linux, macos, ios]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -204,7 +303,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app. The README says how to run them."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, and hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator). The README says how to run them."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
               gh release upload "$GITHUB_REF_NAME" dist/* --clobber
