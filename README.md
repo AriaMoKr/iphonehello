@@ -19,8 +19,14 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
 - Windows on ARM64: [hello-arm64.exe](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello-arm64.exe)
   and [hello_qt-windows-arm64.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-windows-arm64.zip)
   are the same apps built for ARM64, so they run natively (the x64 ones run there too, emulated).
-- Linux (x86-64): [hello_qt-linux.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux.tar.gz)
-  holds `hello_qt`, which needs Qt 6 (Ubuntu 24.04: `sudo apt install libqt6widgets6t64`).
+- Linux (x86-64): [hello_qt-linux.AppImage](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux.AppImage)
+  has Qt inside and runs on most distributions with glibc 2.34 or later, such as Ubuntu 22.04, Debian 12,
+  RHEL 9 (and AlmaLinux and Rocky Linux 9), Fedora, and their newer versions, on X11 or, through XWayland, on
+  Wayland. Make it executable, then start it:
+  `chmod +x hello_qt-linux.AppImage && ./hello_qt-linux.AppImage`. It mounts itself with FUSE, which desktops
+  have; without FUSE, as in a container, add `--appimage-extract-and-run`.
+  [hello_qt-linux.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux.tar.gz)
+  holds just `hello_qt`, which needs Qt 6 (Ubuntu 24.04: `sudo apt install libqt6widgets6t64`).
 - Linux (ARM64, such as 64-bit Raspberry Pi OS on a Raspberry Pi 4 or 5): [hello_qt-linux-arm64.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux-arm64.tar.gz)
   holds `hello_qt`, which needs Qt 6 (Raspberry Pi OS and Debian 12 or 13: `sudo apt install libqt6widgets6`;
   Ubuntu 24.04: `sudo apt install libqt6widgets6t64`). So far it has only run on GitHub's ARM64 runner, not yet
@@ -40,10 +46,12 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
   run in the Android emulator
   ([screenshot](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-android-emulator.png)).
 
-The Windows, macOS, iPhone and Android downloads of the Qt app have Qt inside, and the Windows and Android ones
-other libraries too. Their licenses are in a folder `licenses`, whose `README.txt` says what each part is and
-where its source code is: `hello_qt\licenses`, `hello_qt.app/Contents/Resources/licenses`,
-`hello_qt.app/licenses`, and `assets/licenses` in the APK (an APK is a zip).
+The Windows, Linux AppImage, macOS, iPhone and Android downloads of the Qt app have Qt inside, and the Windows,
+AppImage and Android ones other libraries too. Their licenses are in a folder `licenses`, whose `README.txt`
+says what each part is and where its source code is: `hello_qt\licenses`, `licenses` in the AppImage
+(`./hello_qt-linux.AppImage --appimage-extract 'licenses/*'` copies it into the folder `squashfs-root`),
+`hello_qt.app/Contents/Resources/licenses`, `hello_qt.app/licenses`, and `assets/licenses` in the APK (an APK
+is a zip).
 
 ### Checking a download
 
@@ -129,12 +137,24 @@ adb install build-android/android-build/hello_qt.apk
 That makes a debug build, which Gradle signs with your own debug key. GitHub Actions makes a release build, for
 three processors in one APK ([build.yml](.github/workflows/build.yml)).
 
+The AppImage is made in a container of Ubuntu 22.04, so that it runs with an older glibc too, with Qt from
+Qt's online repository, [linuxdeploy](https://github.com/linuxdeploy/linuxdeploy) and its Qt plugin, and
+[appimagetool](https://github.com/AppImage/appimagetool) ([appimage.sh](.github/appimage.sh)). On Linux with
+Docker, xmllint and 7-Zip (Ubuntu 24.04: `sudo apt install docker.io libxml2-utils 7zip`), from the
+repository's root:
+
+```bash
+sh .github/qt.sh linux_x64/desktop/qt6_6120/qt6_6120 qt.qt6.6120.linux_gcc_64 qt/gcc_64
+docker run --rm -v "$PWD:/w" -w /w ubuntu:22.04 sh .github/appimage.sh
+```
+
 Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS, iOS
 and Android it has only been built and started by GitHub Actions (Qt 6.12; for macOS on Apple silicon with
 macOS 26 and on an Intel Mac with macOS 15, for iOS in the iPhone Simulator, for Android in the Android
 emulator), not yet tried by hand on a Mac, an iPhone or an Android phone. The ARM64 builds for Windows (MSYS2
 CLANGARM64, Qt 6.12) and Linux have likewise only run on GitHub's ARM64 runners, not yet on an ARM64 PC or a
-Raspberry Pi.
+Raspberry Pi, and the AppImage only on GitHub's Ubuntu 24.04 runner (with FUSE) and in containers of Ubuntu
+22.04, Debian 12, the newest Fedora and AlmaLinux 9, each with an X server but no desktop.
 
 ## Version
 
@@ -147,6 +167,6 @@ numbers, so there a build after `0.5.0` still says `0.5.0`.
 
 ## License
 
-[MIT](LICENSE). The Qt app's downloads for Windows, macOS, iPhone and Android also contain Qt, under the
-GNU LGPL version 3, and code from other projects, each under its own license: see their `licenses` folder
-([Download](#download)).
+[MIT](LICENSE). The Qt app's downloads for Windows, Linux (the AppImage), macOS, iPhone and Android also
+contain Qt, under the GNU LGPL version 3, and code from other projects, each under its own license: see their
+`licenses` folder ([Download](#download)).

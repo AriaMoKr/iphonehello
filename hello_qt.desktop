@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Hello World
+Comment=A window that says Hello, World!
+Exec=hello_qt
+Icon=hello_qt
+Categories=Utility;

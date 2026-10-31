@@ -3,3 +3,11 @@
 /version.o
 /version.txt
 /build/
+# .github/appimage.sh's: Qt from .github/qt.sh, its tools, build directory, AppDir and AppImage, and the
+# screen of .github/appimage-test.sh
+/qt/
+/tools/
+/build-appimage/
+/AppDir/
+/hello_qt-linux.AppImage
+/screen.xwd

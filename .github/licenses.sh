@@ -11,6 +11,9 @@
 #   sh .github/licenses.sh android hello_qt.apk build/android-build qt/android_arm64_v8a
 #       Qt for Android from that folder, the NDK's libc++, and the libraries that the Gradle project
 #       (androiddeployqt's android-build) compiled in with Qt's Java code, into the APK's assets/licenses
+#   sh .github/licenses.sh linux AppDir qt/gcc_64 20251108
+#       Qt for Linux from that folder, the libraries from Ubuntu's packages, and AppImage's runtime of that
+#       release, into AppDir/licenses (in a container of Ubuntu, .github/appimage.sh)
 #
 # Qt's license texts, and the list of code from other projects inside Qt, come from Qt's source code.
 set -eu
@@ -26,7 +29,8 @@ case $platform in
   macos) lic=$app/Contents/Resources/licenses what=${app##*/} ;;
   ios) lic=$app/licenses what=${app##*/} ;;
   android) lic=$tmp/apk/assets/licenses what="this APK" ;; # zipped into the APK at the end
-  *) echo "usage: $0 windows <folder>, $0 macos|ios <app> <its Qt>, or $0 android <APK> <its Gradle project> <its Qt>" >&2
+  linux) lic=$app/licenses what="this AppImage" ;;
+  *) echo "usage: $0 windows <folder>, $0 macos|ios <app> <its Qt>, $0 android <APK> <its Gradle project> <its Qt>, or $0 linux <AppDir> <its Qt> <its runtime's release>" >&2
      exit 2 ;;
 esac
 mkdir -p "$lic/hello_qt" "$lic/Qt"
@@ -273,5 +277,131 @@ EOF
     *) apk=$PWD/$app ;;
   esac
   (cd "$tmp/apk" && zip -qr "$apk" assets)
+  ;;
+
+linux)
+  # The part that each file in the AppDir belongs to: hello_qt, Qt, ICU (which comes with Qt), the Ubuntu
+  # package that a library comes from, or the AppImage's own files (AppRun and linuxdeploy's hooks, which
+  # start hello_qt, and the desktop file and icons)
+  (cd "$app" && find . ! -type d ! -path './licenses/*' | sed 's,^\./,,' | LC_ALL=C sort) > "$tmp/files"
+  while IFS= read -r f; do
+    case $f in
+      usr/bin/hello_qt | AppRun | AppRun.wrapped | apprun-hooks/* | .DirIcon | *.desktop | *.png | usr/share/*) ;;
+      usr/bin/qt.conf | usr/plugins/* | usr/translations/*) echo "Qt $f" ;;
+      usr/lib/libQt6* | usr/lib/libicu*)
+        if [ ! -e "$3/lib/${f#usr/lib/}" ]; then
+          echo "::error::$f isn't from $3/lib" >&2
+          exit 1
+        fi
+        case $f in
+          usr/lib/libQt6*) echo "Qt $f" ;;
+          *) echo "ICU $f" ;;
+        esac ;;
+      usr/lib/*)
+        p=$(dpkg -S "*/${f#usr/lib/}" 2> /dev/null | sed -n '1s/:.*//p')
+        if [ -z "$p" ]; then
+          echo "::error::No Ubuntu package has $f" >&2
+          exit 1
+        fi
+        echo "$p $f" ;;
+      *) echo "::error::$f in $app isn't known here" >&2
+         exit 1 ;;
+    esac
+  done < "$tmp/files" > "$tmp/parts"
+  qtv=$(sed -n 's/^QT_VERSION = //p' "$3/mkspecs/qconfig.pri")
+  qt "$qtv"
+
+  # ICU's license, from its source code at the version that Qt has (as in the libraries' names)
+  icuv=$(ls "$3/lib" | sed -n 's/^libicuuc\.so\.\([0-9]*\.[0-9]*\)$/\1/p')
+  icutag=release-${icuv%.*}-${icuv#*.}
+  mkdir -p "$lic/ICU"
+  curl -fsSL --retry 3 -o "$lic/ICU/LICENSE" "https://raw.githubusercontent.com/unicode-org/icu/$icutag/icu4c/LICENSE"
+
+  # Ubuntu's packages: each one's copyright file, its license if that is in Debian's machine-readable
+  # format (the license of "Files: *"; others are free text), and its source package on Launchpad
+  distro=$(. /etc/os-release && echo "$NAME $VERSION_ID")
+  for p in $(awk '$1 != "Qt" && $1 != "ICU" { print $1 }' "$tmp/parts" | LC_ALL=C sort -u); do
+    mkdir -p "$lic/$p"
+    if ! cp -L "/usr/share/doc/$p/copyright" "$lic/$p/"; then
+      echo "::error::$p has no copyright file" >&2
+      exit 1
+    fi
+    v=$(dpkg-query -W -f '${Version}' "$p")
+    src=$(dpkg-query -W -f '${source:Package}/${source:Version}' "$p")
+    license=$(awk 'NR == 1 && !/^Format/ { exit }
+                   /^Files: *\*[[:space:]]*$/ { all = 1 }
+                   all && /^License:/ { sub(/^License: */, ""); sub(/[[:space:]]+$/, ""); print; exit }
+                   /^[[:space:]]*$/ { all = 0 }' "$lic/$p/copyright")
+    libs=$(awk -v p="$p" '$1 == p { sub(/^usr\/lib\//, "", $2); printf "%s%s", s, $2; s = ", " }' "$tmp/parts")
+    echo "  $p $v, ${license:-as in $p/copyright}: $libs"
+    echo "    https://launchpad.net/ubuntu/+source/$src"
+  done > "$tmp/packages"
+  # The license texts in /usr/share/common-licenses that the copyright files refer to
+  for f in $(cat "$lic"/*/copyright | grep -o '/usr/share/common-licenses/[A-Za-z0-9.+_-]*[A-Za-z0-9+_-]' |
+      LC_ALL=C sort -u); do
+    if [ -f "$f" ]; then
+      mkdir -p "$lic/common-licenses"
+      cp "$f" "$lic/common-licenses/"
+    fi
+  done
+
+  # AppImage's runtime, which the AppImage file starts with. Its build (in its repository, at the release)
+  # links in libfuse, with changes of its own, and squashfuse, at the versions that
+  # scripts/common/install-dependencies.sh names, and musl, zstd, zlib and mimalloc from the Alpine Linux
+  # that scripts/chroot/chroot_build.sh names: their license texts come from the versions that it has.
+  case $4 in
+    20251108) fuse=3.15.0 squashfuse=0.5.2 alpine=3.21 musl=1.2.5 zstd=1.5.6 zlib=1.3.1 mimalloc=2.1.7 ;;
+    *) echo "::error::What AppImage's runtime $4 links in isn't listed here yet" >&2
+       exit 1 ;;
+  esac
+  mkdir -p "$lic/AppImage-runtime"
+  while read -r name url; do
+    curl -fsSL --retry 3 -o "$lic/AppImage-runtime/$name" "$url"
+  done <<EOF
+LICENSE https://raw.githubusercontent.com/AppImage/type2-runtime/$4/LICENSE
+libfuse-LGPL2.txt https://raw.githubusercontent.com/libfuse/libfuse/fuse-$fuse/LGPL2.txt
+squashfuse-LICENSE https://raw.githubusercontent.com/vasi/squashfuse/$squashfuse/LICENSE
+musl-COPYRIGHT https://git.musl-libc.org/cgit/musl/plain/COPYRIGHT?h=v$musl
+zstd-LICENSE https://raw.githubusercontent.com/facebook/zstd/v$zstd/LICENSE
+zlib-LICENSE https://raw.githubusercontent.com/madler/zlib/v$zlib/LICENSE
+mimalloc-LICENSE https://raw.githubusercontent.com/microsoft/mimalloc/v$mimalloc/LICENSE
+EOF
+
+  cat >> "$lic/README.txt" <<EOF
+usr/bin/hello_qt: hello_qt, under the MIT License. Source code: $repo
+
+usr/lib/libQt6*, usr/plugins and usr/bin/qt.conf:
+Qt $qtv for Linux, from Qt's online repository (built by The Qt Company), under the GNU Lesser General
+Public License version 3 (Qt/LGPL-3.0-only.txt, which adds to Qt/GPL-3.0-only.txt). Qt contains code from
+other projects, listed in Qt/THIRD-PARTY.txt. You may replace these files with your own build of Qt
+${qtv%.*}: ./hello_qt-linux.AppImage --appimage-extract puts the AppImage's files into the folder
+squashfs-root, where you replace them, and squashfs-root/AppRun starts hello_qt. Qt's source code:
+  $qtsrc
+
+usr/lib/libicu*: ICU $icuv (International Components for Unicode), which Qt's online repository has with
+Qt, under the Unicode License (ICU/LICENSE, which also lists the code from other projects in ICU). Source
+code:
+  https://github.com/unicode-org/icu/releases/tag/$icutag
+
+The other libraries in usr/lib come from these packages of $distro: each one's version and license (the
+folder named after it has its copyright file, and common-licenses the license texts that those refer to in
+/usr/share/common-licenses), its libraries here, and where its source code is. As with Qt, you may replace
+them with your own builds.
+EOF
+  cat "$tmp/packages" >> "$lic/README.txt"
+  cat >> "$lic/README.txt" <<EOF
+
+The start of the AppImage file, which mounts the rest (or extracts it) and starts AppRun: AppImage's
+runtime $4, under the MIT License (AppImage-runtime/LICENSE). It contains libfuse $fuse with
+the runtime's changes, under the GNU Lesser General Public License version 2.1
+(AppImage-runtime/libfuse-LGPL2.txt), squashfuse $squashfuse, and musl, zstd, zlib and mimalloc from
+Alpine Linux $alpine, under their licenses in AppImage-runtime. Source code: the runtime's, which builds
+it all and has its changes to libfuse, and libfuse's:
+  https://github.com/AppImage/type2-runtime/tree/$4
+  https://github.com/libfuse/libfuse/releases/tag/fuse-$fuse
+
+AppRun and apprun-hooks, which start hello_qt, come from linuxdeploy and its Qt plugin, which made the
+AppImage; hello_qt.desktop and the icons come with hello_qt's source code.
+EOF
   ;;
 esac

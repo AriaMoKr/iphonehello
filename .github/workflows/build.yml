@@ -6,16 +6,17 @@
 # history with its tags.
 #
 # hello.exe is the Win32 app. hello_qt-windows.zip holds the Qt app with the DLLs and Qt plugins it
-# loads, hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds
-# hello_qt.app for Apple silicon and Intel with Qt inside, signed ad hoc (not notarized).
+# loads, hello_qt-linux.AppImage is the Qt app for x86-64 Linux in one file with Qt inside, while
+# hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds hello_qt.app for
+# Apple silicon and Intel with Qt inside, signed ad hoc (not notarized).
 # The -arm64 files are the same for ARM64: hello-arm64.exe and hello_qt-windows-arm64.zip for Windows,
 # and hello_qt-linux-arm64.tar.gz for Linux, such as 64-bit Raspberry Pi OS.
 # hello_qt-ios.ipa is the Qt app for iPhones, unsigned, and hello_qt-ios-simulator.png shows it running
 # in the iPhone Simulator. hello_qt-android.apk is the Qt app for Android, signed with a key made for the
-# build, and hello_qt-android-emulator.png shows it in the Android emulator. The macOS, iPhone and
-# Android apps get Qt from Qt's online repository (.github/qt.sh). The apps with Qt inside also get a
-# folder licenses: the licenses of Qt and the other libraries in them, and where their source code is
-# (.github/licenses.sh).
+# build, and hello_qt-android-emulator.png shows it in the Android emulator. The AppImage and the macOS,
+# iPhone and Android apps get Qt from Qt's online repository (.github/qt.sh). The apps with Qt inside
+# also get a folder licenses: the licenses of Qt and the other libraries in them, and where their source
+# code is (.github/licenses.sh).
 #
 # Each release also gets SHA256SUMS, the checksums of its files. GitHub keeps an attestation of each
 # file, which says that this workflow built it and from which commit, and gh attestation verify checks
@@ -31,6 +32,10 @@ on:
       - '*.rc'
       - 'Makefile'
       - 'CMakeLists.txt'
+      - 'hello_qt.desktop'
+      - 'hello_qt.svg'
+      - '.github/appimage.sh'
+      - '.github/appimage-test.sh'
       - '.github/licenses.sh'
       - '.github/qt.sh'
       - '.github/workflows/build.yml'
@@ -39,7 +44,8 @@ on:
 permissions:
   contents: read
 
-# The Qt of the macOS, iPhone and Android apps, 6.12.0, as Qt's online repository names it (.github/qt.sh)
+# The Qt of the AppImage and the macOS, iPhone and Android apps, 6.12.0, as Qt's online repository names
+# it (.github/qt.sh)
 env:
   QT: '6120'
 
@@ -230,6 +236,75 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           path: hello_qt-linux-arm64.tar.gz
+          archive: false
+
+  appimage:
+    # hello_qt-linux.AppImage, the Qt app for x86-64 Linux in one file, with Qt and the other libraries it
+    # needs inside, except those that Linux desktops have (.github/appimage.sh). It is built in a container
+    # of Ubuntu 22.04, so that it needs no newer glibc than that (2.35; none of its parts uses more than
+    # 2.34), and tried on this runner with FUSE, as a desktop starts it, and in containers of other
+    # distributions, which have neither Qt nor FUSE.
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash # -eo pipefail
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Qt for Linux, in the folder Qt's installer gives it
+      - name: Install Qt
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxml2-utils
+          sh .github/qt.sh linux_x64/desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.linux_gcc_64 qt/gcc_64
+
+      # If it fails, the end of its output becomes an annotation, which can be read without a GitHub login.
+      - name: Build
+        run: |
+          if ! docker run --rm -v "$PWD:/w" -w /w -e GITHUB_SERVER_URL -e GITHUB_REPOSITORY -e GITHUB_SHA \
+              ubuntu:22.04 sh .github/appimage.sh 2>&1 | tee build.txt; then
+            tail -n 40 build.txt | tr -d '\r' | sed 's/%/%25/g' |
+              awk '{ s = s $0 "%0A" } END { print "::error title=End of the build log::" s }'
+            exit 1
+          fi
+
+      # On this runner's Ubuntu 24.04 with FUSE, and in containers of Ubuntu 22.04, Debian 12, the newest
+      # Fedora and AlmaLinux 9 (glibc 2.34, like RHEL 9), where it extracts itself (.github/appimage-test.sh):
+      # each time still running after 8 seconds, and the screen, which OCR reads, shows its Hello, World! If
+      # it fails, the end of its output becomes an annotation. The runner gets FUSE and what
+      # appimage-test.sh installs in the containers.
+      - name: Smoke test
+        run: |
+          sudo apt-get install -y fuse3 xvfb libgl1 libegl1 libx11-xcb1 fonts-dejavu-core tesseract-ocr netpbm \
+            > /dev/null
+          for image in '' ubuntu:22.04 debian:12 fedora:latest almalinux:9; do
+            if [ -z "$image" ]; then
+              set -- sh .github/appimage-test.sh
+            else
+              set -- docker run --rm -v "$PWD:/w" -w /w $image sh .github/appimage-test.sh
+            fi
+            rm -f screen.xwd
+            if ! "$@" > test.txt 2>&1; then
+              tail -n 30 test.txt | tr -d '\r' | sed 's/%/%25/g' |
+                awk -v t="${image:-this runner}" '{ s = s "%0A" $0 } END { print "::error::In " t ":" s }'
+              exit 1
+            fi
+            system=$(sed -n 's/^system: //p' test.txt)
+            xwdtopnm screen.xwd > screen.ppm 2> /dev/null
+            tesseract screen.ppm - > ocr.txt 2> /dev/null || :
+            if ! grep -q Hello ocr.txt; then
+              echo "::error::On $system, the screen doesn't show Hello, World!, but this (OCR):"
+              sed -n '/[^[:space:]]/p' ocr.txt | head -n 8 | sed 's/^/::error::/'
+              exit 1
+            fi
+            echo "::notice::$system: the screen shows $(grep -m 1 Hello ocr.txt)"
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: hello_qt-linux.AppImage
           archive: false
 
   macos:
@@ -545,7 +620,7 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, linux-arm64, macos, macos-intel, ios, android]
+    needs: [windows, linux, linux-arm64, appimage, macos, macos-intel, ios, android]
     runs-on: ubuntu-latest
     # The attestation needs id-token, for its signing certificate, and attestations, to store it.
     permissions:
@@ -579,7 +654,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each. SHA256SUMS has the files' checksums, and GitHub keeps an attestation of where each was built: the README says how to check a download."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-linux.AppImage is the Qt app for x86-64 Linux in one file, which runs on most distributions, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, AppImage, macOS, iPhone and Android apps have Qt inside, and the Windows, AppImage and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each. SHA256SUMS has the files' checksums, and GitHub keeps an attestation of where each was built: the README says how to check a download."
           release() {
             if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
               if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then

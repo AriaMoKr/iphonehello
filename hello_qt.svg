@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- hello_qt's icon: a speech bubble with the world in it -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b9cff"/>
+      <stop offset="1" stop-color="#2450c8"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#sky)"/>
+  <path fill="#fff" d="M76 40h104a40 40 0 0 1 40 40v64a40 40 0 0 1-40 40h-58l-46 34 10-34h-10a40 40 0 0 1-40-40v-64a40 40 0 0 1 40-40z"/>
+  <g fill="none" stroke="#2450c8" stroke-width="7" stroke-linecap="round">
+    <circle cx="128" cy="112" r="48" fill="#e3edff"/>
+    <ellipse cx="128" cy="112" rx="20" ry="48"/>
+    <path d="M80 112h96M86.5 88h83M86.5 136h83"/>
+  </g>
+</svg>
