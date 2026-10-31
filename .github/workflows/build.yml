@@ -471,7 +471,7 @@ jobs:
           $tools/apksigner verify --print-certs hello_qt-android.apk
 
       # In the Android emulator, with Android 16 (KVM makes it fast): still running after 10 seconds, and a
-      # screenshot of it.
+      # screenshot of it, which has to show its Hello, World!
       - name: Smoke test
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
@@ -499,6 +499,10 @@ jobs:
             tail -n 9 emulator.txt | sed 's/^/::error::/'
             exit 1
           fi
+          # A newly started emulator can be slow enough for System UI to hang, and Android's dialog about it
+          # would cover the app. From here on there are no such dialogs (Android closes an app that hangs, and
+          # System UI starts again), and one already open gets closed below.
+          $adb shell settings put global hide_error_dialogs 1
           $adb shell wm dismiss-keyguard || :
           id=io.github.ariamokr.iphonehello
           if ! { $adb install hello_qt-android.apk &&
@@ -512,7 +516,22 @@ jobs:
             $adb logcat -d | grep -i -E 'hello_qt|qt|AndroidRuntime' | tail -n 9 | sed 's/^/::error::/'
             exit 1
           fi
-          $adb exec-out screencap -p > hello_qt-android-emulator.png
+          # OCR reads the screenshot. Without the app's text, dialogs are closed and it is taken again, up to
+          # three times in all.
+          sudo apt-get install -y tesseract-ocr > /dev/null
+          for i in 1 2 3; do
+            $adb exec-out screencap -p > hello_qt-android-emulator.png
+            tesseract hello_qt-android-emulator.png - > ocr.txt 2> /dev/null || :
+            grep -q Hello ocr.txt && break
+            $adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null
+            sleep 5
+          done
+          if ! grep -q Hello ocr.txt; then
+            echo "::error::The screenshot doesn't show Hello, World!, but this (OCR):"
+            sed -n '/[^[:space:]]/p' ocr.txt | head -n 8 | sed 's/^/::error::/'
+            exit 1
+          fi
+          echo "::notice::The screenshot shows $(grep -m 1 Hello ocr.txt)"
 
       - uses: actions/upload-artifact@v7
         with:
