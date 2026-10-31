@@ -1,4 +1,5 @@
-# Build hello.exe with MinGW-w64 g++ (e.g. in an MSYS2 UCRT64 shell).
+# Build hello.exe with MinGW-w64 g++ (e.g. in an MSYS2 UCRT64 shell), or with Clang: make CXX=clang++
+# (in MSYS2's CLANGARM64 for ARM64, which has no g++).
 
 CXXFLAGS = -O2 -Wall -Wextra
 

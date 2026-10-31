@@ -8,7 +8,8 @@
 # hello.exe is the Win32 app. hello_qt-windows.zip holds the Qt app with the DLLs and Qt plugins it
 # loads, hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds
 # hello_qt.app for Apple silicon and Intel with Qt inside, signed ad hoc (not notarized).
-# hello_qt-linux-arm64.tar.gz is hello_qt-linux.tar.gz for ARM64 Linux, such as 64-bit Raspberry Pi OS.
+# The -arm64 files are the same for ARM64: hello-arm64.exe and hello_qt-windows-arm64.zip for Windows,
+# and hello_qt-linux-arm64.tar.gz for Linux, such as 64-bit Raspberry Pi OS.
 # hello_qt-ios.ipa is the Qt app for iPhones, unsigned, and hello_qt-ios-simulator.png shows it running
 # in the iPhone Simulator. hello_qt-android.apk is the Qt app for Android, signed with a key made for the
 # build, and hello_qt-android-emulator.png shows it in the Android emulator. The macOS, iPhone and
@@ -44,7 +45,27 @@ concurrency:
 
 jobs:
   windows:
-    runs-on: windows-latest
+    # x64 with MSYS2's UCRT64 environment (GCC), and ARM64 with its CLANGARM64 environment (Clang), each
+    # on a runner of that architecture, so that the smoke test runs the apps natively. The ARM64 files'
+    # names end in -arm64.
+    name: windows${{ matrix.suffix }}
+    strategy:
+      fail-fast: false # one failing doesn't cancel the other
+      matrix:
+        include:
+          - runner: windows-latest
+            msystem: UCRT64
+            compiler: gcc
+            cxx: g++
+            machine: x86-64
+            suffix: ''
+          - runner: windows-11-arm
+            msystem: CLANGARM64
+            compiler: clang
+            cxx: clang++
+            machine: ARM64
+            suffix: -arm64
+    runs-on: ${{ matrix.runner }}
     defaults:
       run:
         shell: msys2 {0}
@@ -54,33 +75,45 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # The README's MSYS2 UCRT64 packages (git for the version), zip, and jq for .github/licenses.sh.
+      # The README's MSYS2 packages (git for the version), zip, and jq for .github/licenses.sh. pacboy
+      # makes cmake:p the environment's package: mingw-w64-ucrt-x86_64-cmake in UCRT64,
+      # mingw-w64-clang-aarch64-cmake in CLANGARM64.
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: UCRT64
+          msystem: ${{ matrix.msystem }}
           update: true
           install: >-
             make
             zip
             jq
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-git
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-qt6-base
+          pacboy: >-
+            ${{ matrix.compiler }}:p
+            git:p
+            cmake:p
+            ninja:p
+            qt6-base:p
 
+      # make's compiler is g++ unless CXX names another, and CLANGARM64 has clang++ instead; CMake finds
+      # either by itself. Windows on ARM64 runs x64 apps too (emulated), so both .exe files must be for
+      # the runner's machine, as file names it.
       - name: Build
         run: |
-          make
+          make CXX=${{ matrix.cxx }}
           cmake -B build
           cmake --build build
+          for exe in hello.exe build/hello_qt.exe; do
+            if ! file -b $exe | grep -q ", ${{ matrix.machine }}[ ,]"; then
+              echo "::error::$exe isn't for ${{ matrix.machine }}: $(file -b $exe)"
+              exit 1
+            fi
+          done
 
       # A folder that runs without MSYS2: hello_qt.exe, the Qt plugins it loads, then every MSYS2 DLL
       # that the folder's files import, until each import is in the folder or in Windows.
       - name: Bundle hello_qt
         run: |
           app=hello_qt
-          plugins=/ucrt64/share/qt6/plugins
+          plugins=$MINGW_PREFIX/share/qt6/plugins
           mkdir -p $app/platforms $app/styles
           cp build/hello_qt.exe $app/
           cp $plugins/platforms/qwindows.dll $app/platforms/
@@ -91,8 +124,8 @@ jobs:
           while :; do
             copied=
             for dll in $(imports); do
-              if [ ! -e $app/$dll ] && [ -e /ucrt64/bin/$dll ]; then
-                cp /ucrt64/bin/$dll $app/
+              if [ ! -e $app/$dll ] && [ -e $MINGW_PREFIX/bin/$dll ]; then
+                cp $MINGW_PREFIX/bin/$dll $app/
                 copied=1
               fi
             done
@@ -110,10 +143,11 @@ jobs:
           done
           ls $app
 
-      # Still running after 5 seconds with only Windows' folders on PATH, and with its platform plugin
-      # loaded from the folder (QT_DEBUG_PLUGINS lists the plugins Qt loads).
+      # Both apps still running after 5 seconds with only Windows' folders on PATH, and hello_qt with its
+      # platform plugin loaded from the folder (QT_DEBUG_PLUGINS lists the plugins Qt loads).
       - name: Smoke test
         run: |
+          timeout 5 env PATH="$(cygpath -S):$(cygpath -W)" ./hello.exe || [ $? -eq 124 ]
           timeout 5 env PATH="$(cygpath -S):$(cygpath -W)" QT_DEBUG_PLUGINS=1 QT_FORCE_STDERR_LOGGING=1 \
             hello_qt/hello_qt.exe 2> plugins.txt || [ $? -eq 124 ]
           grep 'loaded library' plugins.txt | tee loaded.txt
@@ -123,16 +157,18 @@ jobs:
       - name: Licenses
         run: sh .github/licenses.sh windows hello_qt
 
-      - run: zip -qr hello_qt-windows.zip hello_qt
+      - run: |
+          zip -qr hello_qt-windows${{ matrix.suffix }}.zip hello_qt
+          [ -z "${{ matrix.suffix }}" ] || mv hello.exe hello${{ matrix.suffix }}.exe
 
       - uses: actions/upload-artifact@v7
         with:
-          path: hello.exe
+          path: hello${{ matrix.suffix }}.exe
           archive: false
 
       - uses: actions/upload-artifact@v7
         with:
-          path: hello_qt-windows.zip
+          path: hello_qt-windows${{ matrix.suffix }}.zip
           archive: false
 
   linux:
@@ -503,7 +539,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
               gh release upload "$GITHUB_REF_NAME" dist/* --clobber

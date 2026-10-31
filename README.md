@@ -16,6 +16,9 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
 - Windows: [hello.exe](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello.exe) runs as it is.
   For [hello_qt-windows.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-windows.zip),
   unzip it and run `hello_qt\hello_qt.exe`.
+- Windows on ARM64: [hello-arm64.exe](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello-arm64.exe)
+  and [hello_qt-windows-arm64.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-windows-arm64.zip)
+  are the same apps built for ARM64, so they run natively (the x64 ones run there too, emulated).
 - Linux (x86-64): [hello_qt-linux.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux.tar.gz)
   holds `hello_qt`, which needs Qt 6 (Ubuntu 24.04: `sudo apt install libqt6widgets6t64`).
 - Linux (ARM64, such as 64-bit Raspberry Pi OS on a Raspberry Pi 4 or 5): [hello_qt-linux-arm64.tar.gz](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-linux-arm64.tar.gz)
@@ -58,11 +61,16 @@ Or without make, and without a version:
 g++ -O2 -Wall -Wextra -o hello.exe hello.cpp -mwindows
 ```
 
+On Windows on ARM64, MSYS2's CLANGARM64 environment has Clang instead of GCC. In its shell (packages
+`mingw-w64-clang-aarch64-clang`, `make`, and `mingw-w64-clang-aarch64-git`), run `make CXX=clang++`, or
+`clang++` instead of `g++` above.
+
 ## Qt version
 
 Needs a C++ compiler, CMake, and Qt 6 or Qt 5 (Qt 6 is used if both are installed):
 
 - MSYS2 UCRT64: `pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-git mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-qt6-base`
+- MSYS2 CLANGARM64 (Windows on ARM64): `pacman -S --needed mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-git mingw-w64-clang-aarch64-cmake mingw-w64-clang-aarch64-ninja mingw-w64-clang-aarch64-qt6-base`
 - Debian/Ubuntu: `sudo apt install build-essential cmake qt6-base-dev`
 - macOS (Homebrew): `brew install cmake qtbase`
 
@@ -72,7 +80,8 @@ cmake --build build
 ```
 
 Then run `./build/hello_qt.exe` on Windows, `./build/hello_qt` on Linux, or `open build/hello_qt.app` on macOS.
-On Windows, start it from the UCRT64 shell: it needs the Qt and GCC runtime DLLs in `/ucrt64/bin`.
+On Windows, start it from the UCRT64 shell (CLANGARM64 on ARM64): it needs the Qt and C++ runtime DLLs in
+`/ucrt64/bin` (`/clangarm64/bin`).
 
 For iPhone you need a Mac with Xcode, and Qt for iOS from Qt's installer, which needs a Qt account
 ([build.yml](.github/workflows/build.yml) shows how GitHub Actions gets Qt without one). Qt for iOS comes
@@ -105,7 +114,9 @@ three processors in one APK ([build.yml](.github/workflows/build.yml)).
 Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS, iOS
 and Android it has only been built and started by GitHub Actions (Qt 6.12; for macOS on Apple silicon with
 macOS 26 and on an Intel Mac with macOS 15, for iOS in the iPhone Simulator, for Android in the Android
-emulator), not yet tried by hand on a Mac, an iPhone or an Android phone.
+emulator), not yet tried by hand on a Mac, an iPhone or an Android phone. The ARM64 builds for Windows (MSYS2
+CLANGARM64, Qt 6.12) and Linux have likewise only run on GitHub's ARM64 runners, not yet on an ARM64 PC or a
+Raspberry Pi.
 
 ## Version
 
