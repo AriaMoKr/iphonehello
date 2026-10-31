@@ -561,15 +561,23 @@ jobs:
         run: |
           ls -l dist
           notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, macOS, iPhone and Android apps have Qt inside, and the Windows and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each. SHA256SUMS has the files' checksums, and GitHub keeps an attestation of where each was built: the README says how to check a download."
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-              gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          release() {
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+              if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+                gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+              else
+                gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Hello World ${GITHUB_REF_NAME#v}" --notes "$notes"
+              fi
             else
-              gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Hello World ${GITHUB_REF_NAME#v}" --notes "$notes"
+              # latest moves to this commit: the release and its tag go, and come back here.
+              gh release delete latest --cleanup-tag --yes > /dev/null 2>&1 || true
+              gh release create latest dist/* --prerelease --target "$GITHUB_SHA" \
+                --title "Hello World, latest from main" --notes "$notes"
             fi
-          else
-            # latest moves to this commit: the release and its tag go, and come back here.
-            gh release delete latest --cleanup-tag --yes > /dev/null 2>&1 || true
-            gh release create latest dist/* --prerelease --target "$GITHUB_SHA" \
-              --title "Hello World, latest from main" --notes "$notes"
+          }
+          # gh's errors also become annotations, which can be read without a GitHub login, unlike the log
+          if ! release 2> gh.txt; then
+            sed 's/^/::error::/' gh.txt | head -n 9
+            exit 1
           fi
+          cat gh.txt >&2
