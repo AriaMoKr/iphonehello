@@ -27,6 +27,10 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
   7 days. Or build it yourself with Xcode (below). So far it has only run in the iPhone Simulator
   ([screenshot](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-ios-simulator.png)).
 
+The Windows, macOS and iPhone downloads of the Qt app have Qt and other libraries inside. Their licenses are in
+a folder `licenses`, whose `README.txt` says what each part is and where its source code is: `hello_qt\licenses`,
+`hello_qt.app/Contents/Resources/licenses` and `hello_qt.app/licenses`.
+
 ## Win32 version
 
 In an MSYS2 UCRT64 shell (packages `mingw-w64-ucrt-x86_64-gcc` and `make`):
@@ -77,4 +81,5 @@ tried on a Mac or an iPhone.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). The Qt app's downloads for Windows, macOS and iPhone also contain Qt, under the GNU LGPL
+version 3, and other libraries, each under its own license: see their `licenses` folder ([Download](#download)).

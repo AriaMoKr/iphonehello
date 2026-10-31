@@ -6,7 +6,9 @@
 # hello.exe is the Win32 app. hello_qt-windows.zip holds the Qt app with the DLLs and Qt plugins it
 # loads, hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds
 # hello_qt.app with Qt inside, signed ad hoc (not notarized). hello_qt-ios.ipa is the Qt app for
-# iPhones, unsigned, and hello_qt-ios-simulator.png shows it running in the iPhone Simulator.
+# iPhones, unsigned, and hello_qt-ios-simulator.png shows it running in the iPhone Simulator. The apps
+# with Qt inside also get a folder licenses: the licenses of Qt and the other libraries in them, and
+# where their source code is (.github/licenses.sh).
 name: Build
 
 on:
@@ -17,6 +19,7 @@ on:
       - '*.cpp'
       - 'Makefile'
       - 'CMakeLists.txt'
+      - '.github/licenses.sh'
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
@@ -38,7 +41,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # The README's MSYS2 UCRT64 packages, and zip.
+      # The README's MSYS2 UCRT64 packages, zip, and jq for .github/licenses.sh.
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -46,6 +49,7 @@ jobs:
           install: >-
             make
             zip
+            jq
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
@@ -100,6 +104,10 @@ jobs:
             hello_qt/hello_qt.exe 2> plugins.txt || [ $? -eq 124 ]
           grep 'loaded library' plugins.txt | tee loaded.txt
           grep -q 'hello_qt/platforms/qwindows\.dll' loaded.txt
+
+      # Into hello_qt/licenses: the licenses of Qt and the other DLLs, and where their source code is.
+      - name: Licenses
+        run: sh .github/licenses.sh windows hello_qt
 
       - run: zip -qr hello_qt-windows.zip hello_qt
 
@@ -156,7 +164,8 @@ jobs:
           cmake --build build
 
       # Qt goes into the app, and the build's run paths into Homebrew come out, so the app never picks up a
-      # Homebrew Qt on the Mac it runs on. Then it is signed ad hoc again: Apple silicon runs only signed code.
+      # Homebrew Qt on the Mac it runs on. The licenses of Qt and the other libraries go into
+      # Contents/Resources/licenses. Then it is signed ad hoc again: Apple silicon runs only signed code.
       - name: Bundle hello_qt.app
         run: |
           macdeployqt build/hello_qt.app
@@ -164,6 +173,7 @@ jobs:
           for rpath in $(otool -l $exe | awk '$2 == "LC_RPATH" { getline; getline; if ($2 !~ /^@/) print $2 }'); do
             install_name_tool -delete_rpath $rpath $exe
           done
+          sh .github/licenses.sh macos build/hello_qt.app
           codesign --force --deep --sign - build/hello_qt.app
 
       # Still running after 5 seconds, and every library it loaded (dyld lists them) is in the app or macOS.
@@ -263,9 +273,11 @@ jobs:
           fi
           xcrun simctl io $udid screenshot hello_qt-ios-simulator.png
 
-      # An .ipa is a zip with the app in Payload/.
+      # The licenses of Qt, which the app has inside, go into hello_qt.app/licenses. An .ipa is a zip with
+      # the app in Payload/.
       - name: Package hello_qt-ios.ipa
         run: |
+          sh .github/licenses.sh ios build-ios/Release-iphoneos/hello_qt.app qt/ios_device
           mkdir Payload
           cp -R build-ios/Release-iphoneos/hello_qt.app Payload/
           zip -qr hello_qt-ios.ipa Payload
@@ -299,7 +311,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, and hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator). The README says how to run them."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, and hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator). The README says how to run them. The Windows, macOS and iPhone apps have Qt and other libraries inside: their licenses, and where their source code is, are in the folder licenses in each."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
               gh release upload "$GITHUB_REF_NAME" dist/* --clobber
