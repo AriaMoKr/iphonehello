@@ -5,10 +5,11 @@
 #
 # hello.exe is the Win32 app. hello_qt-windows.zip holds the Qt app with the DLLs and Qt plugins it
 # loads, hello_qt-linux.tar.gz needs Qt 6 from the distribution, and hello_qt-macos.zip holds
-# hello_qt.app with Qt inside, signed ad hoc (not notarized). hello_qt-ios.ipa is the Qt app for
-# iPhones, unsigned, and hello_qt-ios-simulator.png shows it running in the iPhone Simulator. The apps
-# with Qt inside also get a folder licenses: the licenses of Qt and the other libraries in them, and
-# where their source code is (.github/licenses.sh).
+# hello_qt.app for Apple silicon and Intel with Qt inside, signed ad hoc (not notarized).
+# hello_qt-ios.ipa is the Qt app for iPhones, unsigned, and hello_qt-ios-simulator.png shows it running
+# in the iPhone Simulator. The macOS and iPhone apps get Qt from Qt's online repository (.github/qt.sh).
+# The apps with Qt inside also get a folder licenses: the licenses of Qt and the other libraries in
+# them, and where their source code is (.github/licenses.sh).
 name: Build
 
 on:
@@ -20,11 +21,16 @@ on:
       - 'Makefile'
       - 'CMakeLists.txt'
       - '.github/licenses.sh'
+      - '.github/qt.sh'
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# The Qt of the macOS and iPhone apps, 6.12.0, as Qt's online repository names it (.github/qt.sh)
+env:
+  QT: '6120'
 
 concurrency:
   group: build-${{ github.ref }}
@@ -147,47 +153,57 @@ jobs:
           archive: false
 
   macos:
-    # A fixed version, not macos-latest: the app needs the macOS it was built on or later (README).
-    runs-on: macos-15
+    # Qt 6.12 for macOS is built with Xcode 26, this runner's default Xcode. The app still runs on
+    # macOS 14.4 or later, like Qt.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      # The runner has Xcode's tools and CMake. Only qtbase (Core, Gui, Widgets and the like): with all of
-      # qt, macdeployqt would also put other modules' plugins into the app.
-      - run: brew install qtbase
+      # The runner has Xcode's tools and CMake. Qt for macOS, for Apple silicon and Intel in one, in the
+      # folder Qt's installer gives it.
+      - name: Install Qt
+        run: |
+          brew install sevenzip
+          sh .github/qt.sh desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.clang_64 qt/macos
 
+      # For both architectures; Qt's toolchain file makes Qt's oldest macOS the app's too.
       - name: Build
         run: |
-          cmake -B build
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=$PWD/qt/macos/lib/cmake/Qt6/qt.toolchain.cmake \
+            -DCMAKE_OSX_ARCHITECTURES='arm64;x86_64'
           cmake --build build
 
-      # Qt goes into the app, and the build's run paths into Homebrew come out, so the app never picks up a
-      # Homebrew Qt on the Mac it runs on. The licenses of Qt and the other libraries go into
+      # Qt goes into the app, and the build's run path into qt/macos comes out (otool lists it once for
+      # each architecture), so the app looks for Qt only inside itself. The licenses of Qt go into
       # Contents/Resources/licenses. Then it is signed ad hoc again: Apple silicon runs only signed code.
       - name: Bundle hello_qt.app
         run: |
-          macdeployqt build/hello_qt.app
+          qt/macos/bin/macdeployqt build/hello_qt.app
           exe=build/hello_qt.app/Contents/MacOS/hello_qt
-          for rpath in $(otool -l $exe | awk '$2 == "LC_RPATH" { getline; getline; if ($2 !~ /^@/) print $2 }'); do
+          for rpath in $(otool -l $exe | awk '$2 == "LC_RPATH" { getline; getline; if ($2 !~ /^@/) print $2 }' | sort -u); do
             install_name_tool -delete_rpath $rpath $exe
           done
-          sh .github/licenses.sh macos build/hello_qt.app
+          sh .github/licenses.sh macos build/hello_qt.app qt/macos
           codesign --force --deep --sign - build/hello_qt.app
 
-      # Still running after 5 seconds, and every library it loaded (dyld lists them) is in the app or macOS.
+      # On Apple silicon, and through Rosetta as on an Intel Mac: still running after 10 seconds, and every
+      # library it loaded (dyld lists them) is in the app or macOS. arch passes DYLD_PRINT_LIBRARIES on (-e),
+      # which macOS would otherwise drop.
       - name: Smoke test
         run: |
-          DYLD_PRINT_LIBRARIES=1 build/hello_qt.app/Contents/MacOS/hello_qt 2> loaded.txt &
-          sleep 5
-          kill $!
-          grep -a '^dyld.*/Qt' loaded.txt
-          # The paths in dyld's lines; its other lines ("move loaded to delayed: CacheDelete") have none.
-          if grep -a '^dyld' loaded.txt | grep -o '/.*' | grep -Ev '^/(System|usr/lib)/|/hello_qt\.app/' > outside.txt; then
-            sed 's/^/::error::Loaded from outside the app and macOS: /' outside.txt
-            exit 1
-          fi
+          for arch in arm64 x86_64; do
+            arch -$arch -e DYLD_PRINT_LIBRARIES=1 build/hello_qt.app/Contents/MacOS/hello_qt 2> loaded.txt &
+            sleep 10
+            kill $!
+            grep -a '^dyld.*/Qt' loaded.txt
+            # The paths in dyld's lines; its other lines ("move loaded to delayed: CacheDelete") have none.
+            if grep -a '^dyld' loaded.txt | grep -o '/.*' | grep -Ev '^/(System|usr/lib)/|/hello_qt\.app/' > outside.txt; then
+              sed "s/^/::error::Loaded from outside the app and macOS ($arch): /" outside.txt
+              exit 1
+            fi
+          done
 
       - run: ditto -c -k --keepParent build/hello_qt.app hello_qt-macos.zip
 
@@ -207,32 +223,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # qtbase three times: Qt for iOS built for iPhones and for the Simulator on Apple silicon, and Qt for
+      # Qt three times: Qt for iOS built for iPhones and for the Simulator on Apple silicon, and Qt for
       # macOS, whose tools (moc and the like) the build runs, each in the folder Qt's installer gives it.
-      # Qt's installer needs a Qt account and aqtinstall doesn't know Qt 6.12's iOS packages yet, so the
-      # archives come straight from Qt's online repository, whose Updates.xml lists each package's version
-      # and archives.
       - name: Install Qt
         run: |
           brew install sevenzip
-          repo=https://download.qt.io/online/qtsdkrepository/mac_x64
-          v=6120
-          # <folder in the repository> <package> <folder here>: the package's qtbase, unpacked (the archive
-          # holds a whole Qt: bin, lib and so on)
-          qtbase() {
-            curl -fsSL --retry 3 -o Updates.xml $repo/$1/Updates.xml
-            version=$(xmllint --xpath "string(//PackageUpdate[Name='$2']/Version)" Updates.xml)
-            archive=$(xmllint --xpath "string(//PackageUpdate[Name='$2']/DownloadableArchives)" Updates.xml |
-              tr , '\n' | sed 's/^ *//' | grep '^qtbase-')
-            url=$repo/$1/$2/$version$archive
-            curl -fsSL --retry 3 -o qtbase.7z $url
-            echo "$(curl -fsSL --retry 3 $url.sha1)  qtbase.7z" | shasum -c
-            7zz x -bd -o$3 qtbase.7z > /dev/null
-            rm qtbase.7z Updates.xml
-          }
-          qtbase desktop/qt6_$v/qt6_$v qt.qt6.$v.clang_64 qt/macos
-          qtbase ios/qt6_$v/qt6_${v}_device qt.qt6.$v.qtforios.device qt/ios_device
-          qtbase ios/qt6_$v/qt6_${v}_simulator_arm64 qt.qt6.$v.qtforios.simulator_arm64 qt/ios_simulator_arm64
+          sh .github/qt.sh desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.clang_64 qt/macos
+          sh .github/qt.sh ios/qt6_$QT/qt6_${QT}_device qt.qt6.$QT.qtforios.device qt/ios_device
+          sh .github/qt.sh ios/qt6_$QT/qt6_${QT}_simulator_arm64 qt.qt6.$QT.qtforios.simulator_arm64 qt/ios_simulator_arm64
 
       # The iPhone app, unsigned (the README says how it gets signed), and the Simulator's. If the build fails,
       # its first errors become annotations: unlike the job's log, those can be read without a GitHub login.
@@ -311,7 +309,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, and hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator). The README says how to run them. The Windows, macOS and iPhone apps have Qt and other libraries inside: their licenses, and where their source code is, are in the folder licenses in each."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz and hello_qt-macos.zip hold the Qt app, and hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator). The README says how to run them. The Windows, macOS and iPhone apps have Qt inside, and the Windows one other libraries too: their licenses, and where their source code is, are in the folder licenses in each."
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
               gh release upload "$GITHUB_REF_NAME" dist/* --clobber

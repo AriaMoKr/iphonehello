@@ -4,7 +4,7 @@
 # from the repository's root once the bundle is complete (on macOS, before the app is signed):
 #
 #   sh .github/licenses.sh windows hello_qt                MSYS2's Qt and DLLs, into hello_qt/licenses
-#   sh .github/licenses.sh macos hello_qt.app              Homebrew's Qt and libraries, into
+#   sh .github/licenses.sh macos hello_qt.app qt/macos     Qt for macOS from that folder, into
 #                                                          hello_qt.app/Contents/Resources/licenses
 #   sh .github/licenses.sh ios hello_qt.app qt/ios_device  Qt for iOS from that folder, into
 #                                                          hello_qt.app/licenses
@@ -16,12 +16,11 @@ platform=$1
 app=$2
 repo=${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-AriaMoKr/iphonehello}
 commit=${GITHUB_SHA:-$(git rev-parse HEAD)}
-spdx=https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text
 case $platform in
   windows) lic=$app/licenses what="the folder ${app##*/}" ;;
   macos) lic=$app/Contents/Resources/licenses what=${app##*/} ;;
   ios) lic=$app/licenses what=${app##*/} ;;
-  *) echo "usage: $0 windows|macos|ios <bundle> [<Qt for iOS>]" >&2; exit 2 ;;
+  *) echo "usage: $0 windows <folder>, or $0 macos|ios <app> <its Qt>" >&2; exit 2 ;;
 esac
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -144,70 +143,26 @@ EOF
   ;;
 
 macos)
-  # Each library's Homebrew formula: the folder in Homebrew's Cellar it was copied from, <formula>/<version>,
-  # which the formula's link in opt points to (the Cellar can also hold older versions)
-  cellar=$(brew --cellar)
-  opt=$(brew --prefix)/opt
+  # Qt for macOS comes with no other libraries: everything in Contents/Frameworks is part of Qt
+  qtfiles=
   for f in "$app"/Contents/Frameworks/*; do
-    set -- "$opt"/*/lib/"${f##*/}"
-    [ -e "$1" ] || { echo "::error::${f##*/} is in no Homebrew formula"; exit 1; }
-    k=$(cd -P "${1%/lib/*}" && pwd)
-    echo "${k#"$cellar"/} ${f##*/}"
-  done > "$tmp/unsorted"
-  LC_ALL=C sort "$tmp/unsorted" > "$tmp/libs"
-  formulae=$(cut -d/ -f1 "$tmp/libs" | LC_ALL=C sort -u)
-  brew info --json=v2 $formulae > "$tmp/info.json"
-  # field <formula> <jq path>: one of the formula's fields, as brew info gives them
-  field() {
-    jq -r --arg f "$1" ".formulae[] | select(.name == \$f) | $2" "$tmp/info.json"
-  }
-  core=https://github.com/Homebrew/homebrew-core/blob
-  qtv=$(awk -F'[/ ]' '$1 == "qtbase" { print $2; exit }' "$tmp/libs")
-  qt "${qtv%_*}"
-
-  for f in $formulae; do
-    if [ "$f" = qtbase ]; then
-      continue
-    fi
-    v=$(awk -F'[/ ]' -v f="$f" '$1 == f { print $2; exit }' "$tmp/libs")
-    license=$(field "$f" .license)
-    # Its own license files, and the texts of the licenses it names, from SPDX's license list: not every
-    # formula installs them all (glib, gettext's libintl and FreeType don't).
-    mkdir -p "$lic/$f"
-    find "$cellar/$f/$v" -maxdepth 1 -type f \( -iname 'licen[cs]e*' -o -iname 'copying*' -o -iname 'notice*' \) \
-      -exec cp {} "$lic/$f/" \;
-    for id in $(echo "$license" | tr '()' '  '); do
-      case $id in
-        AND | OR | WITH) ;;
-        *) curl -fsSL --retry 3 -o "$lic/$f/$id.txt" "$spdx/$id.txt" ;;
-      esac
-    done
-    url=$(field "$f" .urls.stable.url)
-    formula=$core/$(field "$f" .tap_git_head)/$(field "$f" .ruby_source_path)
-    libs=$(awk -F'[/ ]' -v f="$f" '$1 == f { printf "%s%s", s, $3; s = ", " }' "$tmp/libs")
-    echo "  $f $v, $license: $libs"
-    echo "    $url"
-    echo "    $formula"
-  done > "$tmp/formulae"
-
-  qtformula=$core/$(field qtbase .tap_git_head)/$(field qtbase .ruby_source_path)
-  qtfiles=$(awk -F'[/ ]' '$1 == "qtbase" { printf "%s%s", s, $3; s = ", " }' "$tmp/libs")
+    case ${f##*/} in
+      Qt*.framework) qtfiles=${qtfiles:+$qtfiles, }${f##*/} ;;
+      *) echo "::error::${f##*/} in Contents/Frameworks isn't part of Qt"; exit 1 ;;
+    esac
+  done
+  qtv=$(sed -n 's/^QT_VERSION = //p' "$3/mkspecs/qconfig.pri")
+  qt "$qtv"
   cat >> "$lic/README.txt" <<EOF
 Contents/MacOS/hello_qt: hello_qt, under the MIT License. Source code: $repo
 
 $qtfiles in Contents/Frameworks, and the plugins in Contents/PlugIns:
-Qt ${qtv%_*} from Homebrew's formula qtbase $qtv, under the GNU Lesser General Public License version 3
-(Qt/LGPL-3.0-only.txt, which adds to Qt/GPL-3.0-only.txt). Qt contains code from other projects, listed in
-Qt/THIRD-PARTY.txt. You may replace these files with your own build of Qt ${qtv%.*}, then sign the app
-again (codesign --force --deep --sign - hello_qt.app). Source code, and Homebrew's build of it:
+Qt $qtv for macOS, from Qt's online repository (built by The Qt Company), under the GNU Lesser General
+Public License version 3 (Qt/LGPL-3.0-only.txt, which adds to Qt/GPL-3.0-only.txt). Qt contains code from
+other projects, listed in Qt/THIRD-PARTY.txt. You may replace these files with your own build of Qt
+${qtv%.*}, then sign the app again (codesign --force --deep --sign - hello_qt.app). Qt's source code:
   $qtsrc
-  $qtformula
-
-The other libraries in Contents/Frameworks come from these Homebrew formulae: below each, its source code
-and Homebrew's build of it. Each formula's folder here also has the texts of the licenses it names, from
-SPDX's license list.
 EOF
-  cat "$tmp/formulae" >> "$lic/README.txt"
   ;;
 
 ios)
