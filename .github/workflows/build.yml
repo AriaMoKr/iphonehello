@@ -162,10 +162,8 @@ jobs:
           sleep 5
           kill $!
           grep '^dyld.*/Qt' loaded.txt
-          grep '^dyld' loaded.txt | grep -Ev ' /(System|usr/lib)/|/hello_qt\.app/' > outside.txt || true
-          if [ -s outside.txt ]; then
-            cat outside.txt
-            echo "::error::hello_qt.app loaded the files above from outside the app and macOS"
+          if grep '^dyld' loaded.txt | sed 's|^[^/]*||' | grep -Ev '^/(System|usr/lib)/|/hello_qt\.app/' > outside.txt; then
+            sed 's/^/::error::Loaded from outside the app and macOS: /' outside.txt
             exit 1
           fi
 
