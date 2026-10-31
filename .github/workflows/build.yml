@@ -135,29 +135,37 @@ jobs:
         with:
           persist-credentials: false
 
-      # The runner has Xcode's tools and CMake.
-      - run: brew install qt
+      # The runner has Xcode's tools and CMake. Only qtbase (Core, Gui, Widgets and the like): with all of
+      # qt, macdeployqt would also put other modules' plugins into the app.
+      - run: brew install qtbase
 
       - name: Build
         run: |
           cmake -B build
           cmake --build build
 
-      # Qt goes into the app, which is then signed ad hoc again: Apple silicon runs only signed code.
+      # Qt goes into the app, and the build's run paths into Homebrew come out, so the app never picks up a
+      # Homebrew Qt on the Mac it runs on. Then it is signed ad hoc again: Apple silicon runs only signed code.
       - name: Bundle hello_qt.app
         run: |
           macdeployqt build/hello_qt.app
+          exe=build/hello_qt.app/Contents/MacOS/hello_qt
+          for rpath in $(otool -l $exe | awk '$2 == "LC_RPATH" { getline; getline; if ($2 !~ /^@/) print $2 }'); do
+            install_name_tool -delete_rpath $rpath $exe
+          done
           codesign --force --deep --sign - build/hello_qt.app
 
-      # Still running after 5 seconds, and none of the libraries it loaded (dyld lists them) is Homebrew's.
+      # Still running after 5 seconds, and every library it loaded (dyld lists them) is in the app or macOS.
       - name: Smoke test
         run: |
           DYLD_PRINT_LIBRARIES=1 build/hello_qt.app/Contents/MacOS/hello_qt 2> loaded.txt &
           sleep 5
           kill $!
-          grep Qt loaded.txt
-          if grep /opt/homebrew/ loaded.txt; then
-            echo "::error::hello_qt.app loads the files above from Homebrew"
+          grep '^dyld.*/Qt' loaded.txt
+          grep '^dyld' loaded.txt | grep -Ev ' /(System|usr/lib)/|/hello_qt\.app/' > outside.txt || true
+          if [ -s outside.txt ]; then
+            cat outside.txt
+            echo "::error::hello_qt.app loaded the files above from outside the app and macOS"
             exit 1
           fi
 
