@@ -11,3 +11,5 @@
 /AppDir/
 /hello_qt-linux.AppImage
 /screen.xwd
+# The web page's build directory (README)
+/build-wasm/

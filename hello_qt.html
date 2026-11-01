@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- The web page of hello_qt built for WebAssembly, which GitHub Pages has as index.html: Qt's qtloader.js
+     starts the app (hello_qt.js and hello_qt.wasm) with Qt's screen in #screen. It replaces the page that
+     Qt's CMake writes (hello_qt.html in the build folder), so that it has the app's icon and links to its
+     source code and licenses. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- A phone's visual viewport is the device's size, so a CSS pixel is one of Qt's device-independent pixels -->
+<meta name="viewport" content="width=device-width, height=device-height, user-scalable=0">
+<title>Hello World</title>
+<link rel="icon" href="hello_qt.svg" type="image/svg+xml">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { display: flex; flex-direction: column; background: #f4f4f4; color: #333;
+         font: 13px system-ui, sans-serif; }
+  #screen { flex: 1; min-height: 0; position: relative; }
+  #loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 12px; background: #f4f4f4; }
+  footer { padding: 4px 10px; text-align: right; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<div id="loading">
+  <img src="hello_qt.svg" width="128" height="128" alt="">
+  <div id="status">Loading hello_qt…</div>
+  <noscript>hello_qt needs JavaScript, which is turned off in this browser.</noscript>
+</div>
+<footer>Hello World in C++, with Qt for WebAssembly ·
+  <a href="https://github.com/AriaMoKr/iphonehello">Source code</a> ·
+  <a href="licenses/README.txt">Licenses</a></footer>
+<script src="hello_qt.js"></script>
+<script src="qtloader.js"></script>
+<script>
+  // qtLoad (qtloader.js) runs hello_qt_entry, which hello_qt.js defines, and hides #loading once the app
+  // has loaded; if the app ends, #loading comes back and says how.
+  window.addEventListener('load', async () => {
+    const loading = document.querySelector('#loading');
+    const status = document.querySelector('#status');
+    try {
+      await qtLoad({
+        qt: {
+          entryFunction: window.hello_qt_entry,
+          containerElements: [document.querySelector('#screen')],
+          onLoaded: () => { loading.style.display = 'none'; },
+          onExit: exit => {
+            status.textContent = 'hello_qt ended' +
+              (exit.code !== undefined ? ` with code ${exit.code}` : '') +
+              (exit.text !== undefined ? ` (${exit.text})` : '');
+            loading.style.display = '';
+          },
+        },
+      });
+    } catch (e) {
+      status.textContent = `hello_qt couldn't start: ${e}`;
+      console.error(e);
+    }
+  });
+</script>
+</body>
+</html>

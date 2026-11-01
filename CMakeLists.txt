@@ -35,8 +35,10 @@ message(STATUS "hello_qt version ${version}")
 # WIN32 and MACOSX_BUNDLE make it a GUI app: no console window on Windows, an .app on macOS and iOS.
 # On macOS and iOS, Qt's own qt_add_executable also writes the app's Info.plist (and on iOS its launch
 # screen), with the properties set below. On Android it builds the app as a library, which Qt's Java code
-# loads, and adds the target apk, which packs both into an APK.
-if((APPLE OR ANDROID) AND QT_VERSION_MAJOR GREATER_EQUAL 6)
+# loads, and adds the target apk, which packs both into an APK. For WebAssembly (Emscripten) it builds
+# hello_qt.js and hello_qt.wasm and puts a web page for them beside them: hello_qt.html and Qt's
+# qtloader.js, which starts the app.
+if((APPLE OR ANDROID OR EMSCRIPTEN) AND QT_VERSION_MAJOR GREATER_EQUAL 6)
     qt_add_executable(hello_qt MACOSX_BUNDLE hello_qt.cpp)
 else()
     add_executable(hello_qt WIN32 MACOSX_BUNDLE hello_qt.cpp)

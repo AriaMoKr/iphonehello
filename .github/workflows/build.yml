@@ -13,10 +13,11 @@
 # and hello_qt-linux-arm64.tar.gz for Linux, such as 64-bit Raspberry Pi OS.
 # hello_qt-ios.ipa is the Qt app for iPhones, unsigned, and hello_qt-ios-simulator.png shows it running
 # in the iPhone Simulator. hello_qt-android.apk is the Qt app for Android, signed with a key made for the
-# build, and hello_qt-android-emulator.png shows it in the Android emulator. The AppImage and the macOS,
-# iPhone and Android apps get Qt from Qt's online repository (.github/qt.sh). The apps with Qt inside
-# also get a folder licenses: the licenses of Qt and the other libraries in them, and where their source
-# code is (.github/licenses.sh).
+# build, and hello_qt-android-emulator.png shows it in the Android emulator. hello_qt-wasm.zip is the Qt
+# app as a web page (WebAssembly), which a push to main also puts on GitHub Pages. The AppImage and the
+# macOS, iPhone, Android and web apps get Qt from Qt's online repository (.github/qt.sh). The apps with Qt
+# inside also get a folder licenses: the licenses of Qt and the other libraries in them, and where their
+# source code is (.github/licenses.sh).
 #
 # Each release also gets SHA256SUMS, the checksums of its files. GitHub keeps an attestation of each
 # file, which says that this workflow built it and from which commit, and gh attestation verify checks
@@ -34,18 +35,20 @@ on:
       - 'CMakeLists.txt'
       - 'hello_qt.desktop'
       - 'hello_qt.svg'
+      - 'hello_qt.html'
       - '.github/appimage.sh'
       - '.github/appimage-test.sh'
       - '.github/licenses.sh'
       - '.github/qt.sh'
+      - '.github/wasm-test.py'
       - '.github/workflows/build.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# The Qt of the AppImage and the macOS, iPhone and Android apps, 6.12.0, as Qt's online repository names
-# it (.github/qt.sh)
+# The Qt of the AppImage and the macOS, iPhone, Android and web apps, 6.12.0, as Qt's online repository
+# names it (.github/qt.sh)
 env:
   QT: '6120'
 
@@ -618,9 +621,118 @@ jobs:
           path: hello_qt-android-emulator.png
           archive: false
 
+  wasm:
+    # hello_qt as a web page, with Qt 6.12 for WebAssembly: the single-threaded one, as the multithreaded
+    # one needs response headers (COOP and COEP) that GitHub Pages doesn't send. Emscripten is the version
+    # that Qt's documentation names for this Qt (https://doc.qt.io/qt-6/wasm.html).
+    runs-on: ubuntu-24.04
+    env:
+      EMSCRIPTEN: '5.0.5'
+    defaults:
+      run:
+        shell: bash # -eo pipefail
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Qt for WebAssembly, and Qt for Linux, whose tools (moc and the like) the build runs, each in the
+      # folder Qt's installer gives it
+      - name: Install Qt
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxml2-utils
+          sh .github/qt.sh linux_x64/desktop/qt6_$QT/qt6_$QT qt.qt6.$QT.linux_gcc_64 qt/gcc_64
+          sh .github/qt.sh all_os/wasm/qt6_$QT/qt6_${QT}_wasm_singlethread qt.qt6.$QT.wasm_singlethread \
+            qt/wasm_singlethread
+
+      # Emscripten, through its SDK's manager emsdk at that version's tag
+      - name: Install Emscripten
+        run: |
+          git clone -q --depth 1 --branch $EMSCRIPTEN https://github.com/emscripten-core/emsdk.git \
+            $RUNNER_TEMP/emsdk
+          $RUNNER_TEMP/emsdk/emsdk install $EMSCRIPTEN > /dev/null
+          $RUNNER_TEMP/emsdk/emsdk activate $EMSCRIPTEN > /dev/null
+
+      # The page, in the folder page: hello_qt.html from here as index.html, the app's icon, the app
+      # (hello_qt.js and hello_qt.wasm, with Qt linked in statically), Qt's qtloader.js, which starts it,
+      # and the licenses. Qt's toolchain file finds Emscripten through EMSDK, which emsdk_env.sh sets, as
+      # in the README. If the build fails, its first errors and its last lines become annotations.
+      - name: Build
+        run: |
+          . $RUNNER_TEMP/emsdk/emsdk_env.sh > /dev/null 2>&1
+          if ! { cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                   -DCMAKE_TOOLCHAIN_FILE=$PWD/qt/wasm_singlethread/lib/cmake/Qt6/qt.toolchain.cmake \
+                   -DQT_HOST_PATH=$PWD/qt/gcc_64 &&
+                 cmake --build build; } 2>&1 | tee build.txt; then
+            grep -E -A 3 --no-group-separator 'error:|CMake Error|FAILED:' build.txt |
+              head -n 8 | sed 's/^/::error::/'
+            tail -n 40 build.txt | tr -d '\r' | sed 's/%/%25/g' |
+              awk '{ s = s $0 "%0A" } END { print "::warning title=End of the build log::" s }'
+            exit 1
+          fi
+          mkdir page
+          cp hello_qt.html page/index.html
+          cp hello_qt.svg build/hello_qt.js build/hello_qt.wasm build/qtloader.js page/
+          sh .github/licenses.sh wasm page qt/wasm_singlethread
+
+      # From a local web server, in the runner's Google Chrome, which Playwright drives (.github/wasm-test.py):
+      # the page has to start hello_qt, and the screenshot of it, which OCR reads, has to show its Hello,
+      # World! (the window's title is Hello World, without the comma and the !).
+      - name: Smoke test
+        run: |
+          sudo apt-get install -y tesseract-ocr > /dev/null
+          python3 -m venv $RUNNER_TEMP/venv
+          $RUNNER_TEMP/venv/bin/pip install -q playwright==1.64.1
+          python3 -m http.server 8000 --directory page > server.txt 2>&1 &
+          if ! $RUNNER_TEMP/venv/bin/python .github/wasm-test.py http://localhost:8000/ screen.png \
+              > test.txt 2>&1; then
+            tail -n 20 test.txt | sed '/^::/!s/^/::error::/'
+            exit 1
+          fi
+          cat test.txt
+          tesseract screen.png - > ocr.txt 2> /dev/null || :
+          if ! grep -q -E 'Hello, World|World!' ocr.txt; then
+            echo "::error::The page doesn't show Hello, World!, but this (OCR):"
+            sed -n '/[^[:space:]]/p' ocr.txt | head -n 8 | sed 's/^/::error::/'
+            exit 1
+          fi
+          echo "::notice::$(sed -n 's/^browser: //p' test.txt): the page shows" \
+            "$(grep -m 1 -E 'Hello, World|World!' ocr.txt)"
+
+      # The page's files in a zip, for the release, and as GitHub Pages takes them, for the pages job
+      - name: Package hello_qt-wasm.zip
+        run: (cd page && zip -qr ../hello_qt-wasm.zip .)
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: hello_qt-wasm.zip
+          archive: false
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: page
+
+  pages:
+    # The page goes on GitHub Pages, at https://ariamokr.github.io/iphonehello/, from main only (the
+    # github-pages environment takes deployments only from the default branch).
+    if: github.ref == 'refs/heads/main'
+    needs: wasm
+    runs-on: ubuntu-latest
+    # deploy-pages needs pages, to deploy, and id-token, to show that the artifact comes from this run.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5
+
   release:
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux, linux-arm64, appimage, macos, macos-intel, ios, android]
+    needs: [windows, linux, linux-arm64, appimage, macos, macos-intel, ios, android, wasm]
     runs-on: ubuntu-latest
     # The attestation needs id-token, for its signing certificate, and attestations, to store it.
     permissions:
@@ -628,8 +740,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # The apps' files, which all start with hello, but not the page as GitHub Pages takes it (github-pages)
       - uses: actions/download-artifact@v8
         with:
+          pattern: hello*
           path: dist
           merge-multiple: true
           skip-decompress: true
@@ -654,7 +768,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-linux.AppImage is the Qt app for x86-64 Linux in one file, which runs on most distributions, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, AppImage, macOS, iPhone and Android apps have Qt inside, and the Windows, AppImage and Android ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each. SHA256SUMS has the files' checksums, and GitHub keeps an attestation of where each was built: the README says how to check a download."
+          notes="Hello World in C++, built from $GITHUB_SHA. hello.exe is the Win32 app; hello_qt-windows.zip, hello_qt-linux.tar.gz (x86-64), hello_qt-linux-arm64.tar.gz and hello_qt-macos.zip hold the Qt app, hello_qt-linux.AppImage is the Qt app for x86-64 Linux in one file, which runs on most distributions, hello_qt-ios.ipa is the Qt app for iPhones, unsigned (hello_qt-ios-simulator.png shows it in the iPhone Simulator), and hello_qt-android.apk the Qt app for Android, signed with a key made for this build (hello_qt-android-emulator.png shows it in the Android emulator). hello_qt-wasm.zip holds the Qt app as a web page (WebAssembly), which also runs at https://ariamokr.github.io/iphonehello/. hello-arm64.exe and hello_qt-windows-arm64.zip are the Windows apps built for ARM64. The README says how to run them. The Windows, AppImage, macOS, iPhone, Android and web apps have Qt inside, and the Windows, AppImage, Android and web ones other libraries too: their licenses, and where their source code is, are in the folder licenses in each. SHA256SUMS has the files' checksums, and GitHub keeps an attestation of where each was built: the README says how to check a download."
           release() {
             if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
               if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then

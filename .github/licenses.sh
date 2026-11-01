@@ -14,6 +14,9 @@
 #   sh .github/licenses.sh linux AppDir qt/gcc_64 20251108
 #       Qt for Linux from that folder, the libraries from Ubuntu's packages, and AppImage's runtime of that
 #       release, into AppDir/licenses (in a container of Ubuntu, .github/appimage.sh)
+#   sh .github/licenses.sh wasm page qt/wasm_singlethread
+#       Qt for WebAssembly from that folder, and the runtime of the Emscripten that emsdk_env.sh has set up
+#       (EMSDK), into the web page's folder page/licenses
 #
 # Qt's license texts, and the list of code from other projects inside Qt, come from Qt's source code.
 set -eu
@@ -30,7 +33,8 @@ case $platform in
   ios) lic=$app/licenses what=${app##*/} ;;
   android) lic=$tmp/apk/assets/licenses what="this APK" ;; # zipped into the APK at the end
   linux) lic=$app/licenses what="this AppImage" ;;
-  *) echo "usage: $0 windows <folder>, $0 macos|ios <app> <its Qt>, $0 android <APK> <its Gradle project> <its Qt>, or $0 linux <AppDir> <its Qt> <its runtime's release>" >&2
+  wasm) lic=$app/licenses what="this web page" ;;
+  *) echo "usage: $0 windows <folder>, $0 macos|ios <app> <its Qt>, $0 android <APK> <its Gradle project> <its Qt>, $0 linux <AppDir> <its Qt> <its runtime's release>, or $0 wasm <page's folder> <its Qt>" >&2
      exit 2 ;;
 esac
 mkdir -p "$lic/hello_qt" "$lic/Qt"
@@ -402,6 +406,56 @@ it all and has its changes to libfuse, and libfuse's:
 
 AppRun and apprun-hooks, which start hello_qt, come from linuxdeploy and its Qt plugin, which made the
 AppImage; hello_qt.desktop and the icons come with hello_qt's source code.
+EOF
+  ;;
+
+wasm)
+  # The page's files: its HTML and icon, the app (hello_qt.js and hello_qt.wasm, with Qt linked in
+  # statically), and Qt's qtloader.js, which starts it
+  for f in $(cd "$app" && find . ! -type d ! -path './licenses/*' | sed 's,^\./,,' | LC_ALL=C sort); do
+    case $f in
+      index.html | hello_qt.svg | hello_qt.js | hello_qt.wasm | qtloader.js) ;;
+      *) echo "::error::$f in $app isn't known here" >&2
+         exit 1 ;;
+    esac
+  done
+  # Qt for WebAssembly is built on Windows, so its qconfig.pri ends its lines with CR LF
+  qtv=$(sed -n 's/^QT_VERSION = \([0-9.]*\).*/\1/p' "$3/mkspecs/qconfig.pri")
+  qt "$qtv"
+
+  # Emscripten's runtime, which its compiler links into the app: its own code (the JavaScript in
+  # hello_qt.js, embind, its HTML5 and WebGL APIs, its parts of the C library), the C library it bases on
+  # musl, LLVM's libc++, libc++abi and compiler-rt, and dlmalloc. The license files come from the
+  # Emscripten that built the app.
+  em=$EMSDK/upstream/emscripten
+  emv=$(tr -d '"' < "$em/emscripten-version.txt")
+  mkdir -p "$lic/Emscripten"
+  cp "$em/LICENSE" "$lic/Emscripten/LICENSE"
+  cp "$em/system/lib/libc/musl/COPYRIGHT" "$lic/Emscripten/musl-COPYRIGHT"
+  cp "$em/system/lib/libcxx/LICENSE.TXT" "$lic/Emscripten/LLVM-LICENSE.TXT"
+
+  cat >> "$lic/README.txt" <<EOF
+index.html and hello_qt.svg: hello_qt's web page and icon, under the MIT License. Source code: $repo
+
+hello_qt.js and hello_qt.wasm: hello_qt, under the MIT License, built with Emscripten $emv. Source code:
+  $repo
+
+They contain Qt $qtv for WebAssembly, from Qt's online repository (built by The Qt Company) and linked in
+statically, under the GNU Lesser General Public License version 3 (Qt/LGPL-3.0-only.txt, which adds to
+Qt/GPL-3.0-only.txt). Qt contains code from other projects, listed in Qt/THIRD-PARTY.txt. To use your own
+build of Qt instead, build hello_qt from its source code with it (its README says how). Qt's source code:
+  $qtsrc
+
+They also contain the runtime of Emscripten $emv: its own code, among it the JavaScript in hello_qt.js,
+under the MIT License or the University of Illinois/NCSA Open Source License (Emscripten/LICENSE); its C
+library, based on musl (Emscripten/musl-COPYRIGHT); LLVM's libc++, libc++abi and compiler-rt, under the
+Apache License 2.0 with LLVM Exceptions (Emscripten/LLVM-LICENSE.TXT); and dlmalloc, which is in the
+public domain. Source code:
+  https://github.com/emscripten-core/emscripten/tree/$emv
+
+qtloader.js, which starts hello_qt in the page: from Qt $qtv for WebAssembly, under the GNU General Public
+License version 3 (Qt/GPL-3.0-only.txt). It is its own source code, and it is also in Qt's, above
+(src/plugins/platforms/wasm/qtloader.js).
 EOF
   ;;
 esac

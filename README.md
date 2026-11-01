@@ -3,7 +3,8 @@
 Two minimal C++ GUI apps that open a window saying "Hello, World!":
 
 - `hello.cpp` uses only the Win32 API. It runs on Windows only, and `hello.exe` needs no extra DLLs.
-- `hello_qt.cpp` uses Qt Widgets, so it also builds on Linux, macOS, iOS and Android.
+- `hello_qt.cpp` uses Qt Widgets, so it also builds on Linux, macOS, iOS and Android, and as a web page
+  (WebAssembly).
 
 Close the window to quit.
 
@@ -45,13 +46,21 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
   signed with a key made for it, so before installing a newer build, uninstall the old one. So far it has only
   run in the Android emulator
   ([screenshot](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-android-emulator.png)).
+- In a web browser, with nothing to install: [ariamokr.github.io/iphonehello](https://ariamokr.github.io/iphonehello/)
+  runs the Qt app, built for WebAssembly, and a push to `main` puts the newest build there. Qt for WebAssembly is
+  made for Chrome, Edge, Firefox and Safari, on phones too. [hello_qt-wasm.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-wasm.zip)
+  holds the same page, for a web server of your own. A browser runs it only from a web server, not from a file
+  on disk; to try it on your computer, unzip it and start a local one in its folder, such as
+  `python3 -m http.server`, then open http://localhost:8000/. So far it has only run in Google Chrome on
+  GitHub's Ubuntu runner.
 
-The Windows, Linux AppImage, macOS, iPhone and Android downloads of the Qt app have Qt inside, and the Windows,
-AppImage and Android ones other libraries too. Their licenses are in a folder `licenses`, whose `README.txt`
-says what each part is and where its source code is: `hello_qt\licenses`, `licenses` in the AppImage
-(`./hello_qt-linux.AppImage --appimage-extract 'licenses/*'` copies it into the folder `squashfs-root`),
-`hello_qt.app/Contents/Resources/licenses`, `hello_qt.app/licenses`, and `assets/licenses` in the APK (an APK
-is a zip).
+The Windows, Linux AppImage, macOS, iPhone, Android and web downloads of the Qt app have Qt inside, and the
+Windows, AppImage, Android and web ones other libraries too. Their licenses are in a folder `licenses`, whose
+`README.txt` says what each part is and where its source code is: `hello_qt\licenses`, `licenses` in the
+AppImage (`./hello_qt-linux.AppImage --appimage-extract 'licenses/*'` copies it into the folder
+`squashfs-root`), `hello_qt.app/Contents/Resources/licenses`, `hello_qt.app/licenses`, `assets/licenses` in the
+APK (an APK is a zip), and `licenses` beside the web page
+([README.txt](https://ariamokr.github.io/iphonehello/licenses/README.txt) on GitHub Pages).
 
 ### Checking a download
 
@@ -148,13 +157,36 @@ sh .github/qt.sh linux_x64/desktop/qt6_6120/qt6_6120 qt.qt6.6120.linux_gcc_64 qt
 docker run --rm -v "$PWD:/w" -w /w ubuntu:22.04 sh .github/appimage.sh
 ```
 
+For the web page you need CMake and Ninja, Qt for WebAssembly (the single-threaded one, `wasm_singlethread`)
+and Qt for your computer from Qt's installer, and Emscripten 5.0.5, the version that Qt 6.12 is made for, from
+Emscripten's SDK manager [emsdk](https://emscripten.org/docs/getting_started/downloads.html). On Linux or macOS
+(on Windows, in WSL), with emsdk's environment set up, Qt's toolchain file finds Emscripten; `QT_HOST_PATH` is
+the Qt for your computer (on macOS `~/Qt/6.12.0/macos`):
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+~/emsdk/emsdk install 5.0.5 && ~/emsdk/emsdk activate 5.0.5
+. ~/emsdk/emsdk_env.sh
+cmake -G Ninja -B build-wasm -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=$HOME/Qt/6.12.0/wasm_singlethread/lib/cmake/Qt6/qt.toolchain.cmake \
+  -DQT_HOST_PATH=$HOME/Qt/6.12.0/gcc_64
+cmake --build build-wasm
+python3 -m http.server -d build-wasm
+```
+
+Then open http://localhost:8000/hello_qt.html, the page that Qt makes for the app. GitHub Pages has
+[hello_qt.html](hello_qt.html) from here instead, as `index.html`, with the app's icon and links to its source
+code and licenses ([build.yml](.github/workflows/build.yml)).
+
 Tested with Qt 6.12 on Windows 11 (MSYS2 UCRT64; Qt 5.15 works too) and Qt 6.4 on Ubuntu 24.04. On macOS, iOS
 and Android it has only been built and started by GitHub Actions (Qt 6.12; for macOS on Apple silicon with
 macOS 26 and on an Intel Mac with macOS 15, for iOS in the iPhone Simulator, for Android in the Android
 emulator), not yet tried by hand on a Mac, an iPhone or an Android phone. The ARM64 builds for Windows (MSYS2
 CLANGARM64, Qt 6.12) and Linux have likewise only run on GitHub's ARM64 runners, not yet on an ARM64 PC or a
 Raspberry Pi, and the AppImage only on GitHub's Ubuntu 24.04 runner (with FUSE) and in containers of Ubuntu
-22.04, Debian 12, the newest Fedora and AlmaLinux 9, each with an X server but no desktop.
+22.04, Debian 12, the newest Fedora and AlmaLinux 9, each with an X server but no desktop. The web page has only
+run in Google Chrome (headless) on GitHub's Ubuntu 24.04 runner, not yet in Edge, Firefox or Safari, or on a
+phone.
 
 ## Version
 
@@ -167,6 +199,7 @@ numbers, so there a build after `0.5.0` still says `0.5.0`.
 
 ## License
 
-[MIT](LICENSE). The Qt app's downloads for Windows, Linux (the AppImage), macOS, iPhone and Android also
-contain Qt, under the GNU LGPL version 3, and code from other projects, each under its own license: see their
-`licenses` folder ([Download](#download)).
+[MIT](LICENSE). The Qt app's downloads for Windows, Linux (the AppImage), macOS, iPhone and Android, and its
+web page, also contain Qt, under the GNU LGPL version 3, and code from other projects, each under its own
+license: see their `licenses` folder ([Download](#download)). The web page's `qtloader.js`, which starts the
+app, comes from Qt under the GNU GPL version 3.
