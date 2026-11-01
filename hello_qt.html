@@ -19,6 +19,10 @@
              justify-content: center; gap: 12px; background: #f4f4f4; }
   footer { padding: 4px 10px; text-align: right; }
   footer a { color: inherit; }
+  /* Qt draws the app dark when the browser is set to dark, so the rest of the page goes dark too */
+  @media (prefers-color-scheme: dark) {
+    body, #loading { background: #262626; color: #ccc; }
+  }
 </style>
 </head>
 <body>

@@ -51,8 +51,8 @@ always get the newest build. A tag like `v1.0.0` gets a release of its own.
   made for Chrome, Edge, Firefox and Safari, on phones too. [hello_qt-wasm.zip](https://github.com/AriaMoKr/iphonehello/releases/download/latest/hello_qt-wasm.zip)
   holds the same page, for a web server of your own. A browser runs it only from a web server, not from a file
   on disk; to try it on your computer, unzip it and start a local one in its folder, such as
-  `python3 -m http.server`, then open http://localhost:8000/. So far it has only run in Google Chrome on
-  GitHub's Ubuntu runner.
+  `python3 -m http.server`, then open http://localhost:8000/. So far it has only run in Chromium-based
+  browsers, on Linux and Windows.
 
 The Windows, Linux AppImage, macOS, iPhone, Android and web downloads of the Qt app have Qt inside, and the
 Windows, AppImage, Android and web ones other libraries too. Their licenses are in a folder `licenses`, whose
@@ -185,8 +185,8 @@ emulator), not yet tried by hand on a Mac, an iPhone or an Android phone. The AR
 CLANGARM64, Qt 6.12) and Linux have likewise only run on GitHub's ARM64 runners, not yet on an ARM64 PC or a
 Raspberry Pi, and the AppImage only on GitHub's Ubuntu 24.04 runner (with FUSE) and in containers of Ubuntu
 22.04, Debian 12, the newest Fedora and AlmaLinux 9, each with an X server but no desktop. The web page has only
-run in Google Chrome (headless) on GitHub's Ubuntu 24.04 runner, not yet in Edge, Firefox or Safari, or on a
-phone.
+run in Chromium-based browsers so far, on GitHub's Ubuntu 24.04 runner (Google Chrome, headless) and on Windows
+11, not yet in Firefox or Safari, or on a phone.
 
 ## Version
 
