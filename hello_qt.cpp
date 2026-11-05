@@ -11,8 +11,9 @@ int main(int argc, char *argv[])
     QLabel label("Hello, World!");
     label.setAlignment(Qt::AlignCenter);
     label.setWindowTitle("Hello World");
-    // The icon in the title bar and the taskbar, on Windows and Linux and in the web page (hello_qt.qrc
-    // compiles it into the app). macOS, iOS and Android show the app's own icon (CMakeLists.txt).
+    // The icon in the title bar and the taskbar on Windows and Linux (hello_qt.qrc compiles it into the
+    // app). macOS, iOS and Android show the app's own icon (CMakeLists.txt), and in the web page the
+    // window fills the page, without its title bar.
     label.setWindowIcon(QIcon(":/hello_qt.png"));
     label.resize(400, 200);
     label.show();

@@ -4,7 +4,7 @@
 #
 #   hello_qt.ico      Windows: the icon of hello.exe and hello_qt.exe (version.rc), and of their windows
 #   hello_qt.icns     macOS: the app's icon, on Apple's grid, where the icon is 824 pixels of 1024
-#   hello_qt.png      the window's icon (hello_qt.qrc), which Linux and the web page show, and the AppImage's
+#   hello_qt.png      the window's icon (hello_qt.qrc), in its title bar on Windows and Linux, and the AppImage's
 #   Assets.xcassets   iPhone: the app's icon, from which Xcode makes every size; square and opaque, as iOS
 #                     rounds the corners itself
 #   android/res       Android: the launcher icon, an adaptive one: a background and a foreground layer of

@@ -1,8 +1,9 @@
 # Opens hello_qt's web page in the runner's Google Chrome (headless, driven by Playwright), waits until the
-# page has started the app (it hides #loading), checks that the window's title bar, which Qt draws, shows
-# the app's icon (hello_qt.cpp), and saves a screenshot of the app's screen (#screen), which OCR then reads.
-# It prints the browser's version and the icon's size, and the page's console messages, with its errors and
-# warnings as annotations, which can be read without a GitHub login.
+# page has started the app (it hides #loading), checks that the window has the app's icon (hello_qt.cpp),
+# which Qt puts in the title bar it draws for the window (hidden while the window fills the page), and saves
+# a screenshot of the app's screen (#screen), which OCR then reads. It prints the browser's version and the
+# icon's size, and the page's console messages, with its errors and warnings as annotations, which can be
+# read without a GitHub login.
 #
 #   python .github/wasm-test.py http://localhost:8000/ screen.png
 import base64
@@ -39,11 +40,10 @@ with sync_playwright() as p:
             icon = f'no image ({type(e).__name__})'
         if icon and icon.startswith('data:image/png;base64,'):
             width, height = struct.unpack('>2I', base64.b64decode(icon.split(',', 1)[1])[16:24])
-            print(f"window icon: the app's, {width}x{height} pixels in the title bar", flush=True)
+            print(f"window icon: the app's, {width}x{height} pixels", flush=True)
         else:
             ok = False
-            print(f"::error::The window's title bar doesn't show the app's icon, but {(icon or '')[:40]}",
-                  flush=True)
+            print(f"::error::The window doesn't have the app's icon, but {(icon or '')[:40]}", flush=True)
     page.locator('#screen').screenshot(path=png)
     browser.close()
 sys.exit(0 if ok else 1)
