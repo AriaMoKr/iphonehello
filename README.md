@@ -90,7 +90,7 @@ make
 ./hello.exe
 ```
 
-Or without make, and without a version:
+Or without make, and without the [icon](#icon) and the version:
 
 ```bash
 g++ -O2 -Wall -Wextra -o hello.exe hello.cpp -mwindows
@@ -196,6 +196,23 @@ it runs, CMake when it configures the build. Without git or the tags, as in a so
 Windows shows it in the file's Properties → Details, macOS in Get Info, the iPhone in Settings → General →
 iPhone Storage, and Android at the bottom of the app's page in Settings → Apps. Apple's versions are only
 numbers, so there a build after `0.5.0` still says `0.5.0`.
+
+## Icon
+
+The apps' icon is [hello_qt.svg](hello_qt.svg), a speech bubble with the world in it.
+[icons/make.py](icons/make.py) makes each platform's icon from it with librsvg's `rsvg-convert`, into the folder
+`icons`: an `.ico` for both Windows apps ([version.rc](version.rc)), an `.icns` for the macOS app, an asset
+catalog for the iPhone app, an adaptive launcher icon for Android, and a PNG for the Qt app's window, whose title
+bar shows it on Windows and Linux and in the web page ([hello_qt.qrc](hello_qt.qrc) compiles it into the app),
+and which the AppImage takes as its own. They are in the repository, so building the apps needs neither Python
+nor librsvg. After changing the SVG, make them again and commit them with it; GitHub Actions checks that they
+were made from the SVG as it is (`icons/sources.sha256`). In MSYS2 UCRT64 (packages
+`mingw-w64-ucrt-x86_64-python` and `mingw-w64-ucrt-x86_64-librsvg`; Debian/Ubuntu: `python3 librsvg2-bin`;
+macOS: `brew install librsvg`):
+
+```bash
+python3 icons/make.py
+```
 
 ## License
 

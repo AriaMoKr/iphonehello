@@ -1,0 +1,7 @@
+<!-- The window's icon (hello_qt.cpp), which icons/make.py makes from hello_qt.svg. CMake has Qt's rcc
+     compile it into the app (AUTORCC). -->
+<RCC>
+    <qresource prefix="/">
+        <file alias="hello_qt.png">icons/hello_qt.png</file>
+    </qresource>
+</RCC>

@@ -20,10 +20,10 @@ export DEBIAN_FRONTEND=noninteractive APPIMAGE_EXTRACT_AND_RUN=1
 
 # The compiler, Ninja and git (for the version); OpenGL's and xkbcommon's headers, which Qt's CMake files
 # look for; the libraries that Qt's X11 plugin and Qt D-Bus use, for linuxdeploy to copy or leave to the
-# system; rsvg-convert, for the icon; file, which appimagetool runs; and what licenses.sh needs.
+# system; file, which appimagetool runs; and what licenses.sh needs.
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-  g++ ninja-build git ca-certificates curl xz-utils jq librsvg2-bin file \
+  g++ ninja-build git ca-certificates curl xz-utils jq file \
   libgl-dev libegl-dev libxkbcommon-dev \
   libxcb-render0 libxcb-render-util0 libxcb-shape0 libxcb-randr0 libxcb-xfixes0 libxcb-xkb1 libxcb-sync1 \
   libxcb-shm0 libxcb-icccm4 libxcb-keysyms1 libxcb-image0 libxcb-util1 libxcb-cursor0 libxcb-glx0 \
@@ -48,17 +48,17 @@ chmod +x tools/*.AppImage
 tar -xzf "tools/cmake-$cmake-linux-x86_64.tar.gz" -C tools
 PATH=$PWD/tools/cmake-$cmake-linux-x86_64/bin:$PATH
 
-# hello_qt, and its icon as a PNG, which the AppImage shows (and as the SVG, for desktops that take it)
+# hello_qt
 cmake -B build-appimage -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PWD/qt/gcc_64"
 cmake --build build-appimage
-rsvg-convert -w 256 -h 256 -o build-appimage/hello_qt.png hello_qt.svg
 
-# AppDir. linuxdeploy's Qt plugin finds Qt through its qmake. The packages' copyright files go into
-# licenses (licenses.sh), not also into usr/share/doc.
+# AppDir, with the icon as a PNG, which the AppImage shows (icons/make.py makes it), and as the SVG, for
+# desktops that take it. linuxdeploy's Qt plugin finds Qt through its qmake. The packages' copyright files go
+# into licenses (licenses.sh), not also into usr/share/doc.
 rm -rf AppDir
 QMAKE=$PWD/qt/gcc_64/bin/qmake LD_LIBRARY_PATH=$PWD/qt/gcc_64/lib DISABLE_COPYRIGHT_FILES_DEPLOYMENT=1 \
   tools/linuxdeploy-x86_64.AppImage --appdir AppDir --executable build-appimage/hello_qt \
-  --desktop-file hello_qt.desktop --icon-file build-appimage/hello_qt.png --plugin qt
+  --desktop-file hello_qt.desktop --icon-file icons/hello_qt.png --plugin qt
 mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
 cp hello_qt.svg AppDir/usr/share/icons/hicolor/scalable/apps/
 sh .github/licenses.sh linux AppDir qt/gcc_64 "$runtime"

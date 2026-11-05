@@ -37,14 +37,16 @@ message(STATUS "hello_qt version ${version}")
 # screen), with the properties set below. On Android it builds the app as a library, which Qt's Java code
 # loads, and adds the target apk, which packs both into an APK. For WebAssembly (Emscripten) it builds
 # hello_qt.js and hello_qt.wasm and puts a web page for them beside them: hello_qt.html and Qt's
-# qtloader.js, which starts the app.
+# qtloader.js, which starts the app. AUTORCC has Qt's rcc compile hello_qt.qrc, the window's icon, into it.
+set(CMAKE_AUTORCC ON)
 if((APPLE OR ANDROID OR EMSCRIPTEN) AND QT_VERSION_MAJOR GREATER_EQUAL 6)
-    qt_add_executable(hello_qt MACOSX_BUNDLE hello_qt.cpp)
+    qt_add_executable(hello_qt MACOSX_BUNDLE hello_qt.cpp hello_qt.qrc)
 else()
-    add_executable(hello_qt WIN32 MACOSX_BUNDLE hello_qt.cpp)
+    add_executable(hello_qt WIN32 MACOSX_BUNDLE hello_qt.cpp hello_qt.qrc)
 endif()
 target_link_libraries(hello_qt PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
+# Each platform's app also gets the icon in its own way, which icons/make.py makes from hello_qt.svg.
 if(APPLE)
     # One identifier for the macOS and iPhone apps. Apple's versions are only numbers, so a build after a
     # release has that release's version.
@@ -52,17 +54,30 @@ if(APPLE)
         MACOSX_BUNDLE_GUI_IDENTIFIER io.github.ariamokr.iphonehello
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${release}
         MACOSX_BUNDLE_BUNDLE_VERSION ${release})
+    if(IOS)
+        # The icon: an asset catalog, from which Xcode makes it in each size that iOS needs
+        target_sources(hello_qt PRIVATE icons/Assets.xcassets)
+        set_source_files_properties(icons/Assets.xcassets PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        set_target_properties(hello_qt PROPERTIES XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME AppIcon)
+    else()
+        # The icon, in the app's Resources, which its Info.plist names
+        target_sources(hello_qt PRIVATE icons/hello_qt.icns)
+        set_source_files_properties(icons/hello_qt.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        set_target_properties(hello_qt PROPERTIES MACOSX_BUNDLE_ICON_FILE hello_qt.icns)
+    endif()
 elseif(WIN32)
-    # The version resource, as for hello.exe (version.rc)
+    # The resources, as for hello.exe (version.rc): the icon and the version
     string(REPLACE "." "," numbers "${release}")
     target_sources(hello_qt PRIVATE version.rc)
-    set_source_files_properties(version.rc PROPERTIES COMPILE_DEFINITIONS
-        "NAME=hello_qt;VERSION=${version};VERSION_NUMBERS=${numbers},${commits}")
+    set_source_files_properties(version.rc PROPERTIES
+        COMPILE_DEFINITIONS "NAME=hello_qt;VERSION=${version};VERSION_NUMBERS=${numbers},${commits}"
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/icons/hello_qt.ico")
 elseif(ANDROID)
     # The identifier of the Apple apps. Android's version code is a number that has to grow from one
     # version to the next: the four numbers in one, 500003 for 0.5.0 three commits later (and at least 1).
     # The app is built for Android 16 (API level 36), the newest Android that Qt 6.12 supports, rather
-    # than for the newest SDK platform installed.
+    # than for the newest SDK platform installed. The launcher icon is in icons/android/res, which Qt adds
+    # to the APK's resources, and the manifest names it.
     string(REPLACE "." ";" numbers "${release}")
     list(GET numbers 0 major)
     list(GET numbers 1 minor)
@@ -76,5 +91,7 @@ elseif(ANDROID)
         QT_ANDROID_VERSION_NAME ${version}
         QT_ANDROID_VERSION_CODE ${code}
         QT_ANDROID_COMPILE_SDK_VERSION 36
-        QT_ANDROID_TARGET_SDK_VERSION 36)
+        QT_ANDROID_TARGET_SDK_VERSION 36
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/icons/android"
+        QT_ANDROID_APP_ICON @mipmap/ic_launcher)
 endif()

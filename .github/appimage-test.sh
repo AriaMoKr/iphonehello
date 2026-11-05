@@ -2,8 +2,9 @@
 # Starts hello_qt-linux.AppImage as a desktop without Qt would, with an X server (Xvfb): still running after
 # 8 seconds, and then the screen in screen.xwd, where Qt draws at twice the size, for OCR. As root, as in a
 # container of a Linux distribution, it first installs what such a desktop has that the AppImage needs:
-# Xvfb, OpenGL, X11's libraries, fontconfig and a font. Without FUSE (/dev/fuse), as in a container, the
-# AppImage extracts itself instead of mounting itself. Run it from the repository's root, where the
+# Xvfb, OpenGL, X11's libraries, fontconfig and a font. Not as root, as on GitHub's runner, the window also
+# has to have the app's icon, which xprop (x11-utils) reads. Without FUSE (/dev/fuse), as in a container,
+# the AppImage extracts itself instead of mounting itself. Run it from the repository's root, where the
 # AppImage is:
 #
 #   docker run --rm -v "$PWD:/w" -w /w debian:12 sh .github/appimage-test.sh
@@ -41,6 +42,18 @@ if ! kill -0 $app 2> /dev/null; then
   echo "hello_qt-linux.AppImage quit within 8 seconds:"
   cat /tmp/app.txt
   exit 1
+fi
+if [ "$(id -u)" != 0 ]; then
+  # The window's icon (hello_qt.cpp), which xprop shows after a line Icon (<width> x <height>). It reads at
+  # most -len bytes of a property, and on a 64-bit system it counts 8 for each of the icon's 32-bit numbers:
+  # a 256-pixel icon takes 524304, more than its default of 500000, and would show nothing.
+  xprop=$(DISPLAY=:99 xprop -len 4000000 -name 'Hello World' _NET_WM_ICON 2>&1 || :)
+  icon=$(printf '%s\n' "$xprop" | grep -o 'Icon ([0-9]* x [0-9]*)' | head -n 1)
+  if [ -z "$icon" ]; then
+    echo "hello_qt's window has no icon (xprop: $(printf '%s' "$xprop" | head -c 200))"
+    exit 1
+  fi
+  echo "window icon: $icon"
 fi
 if [ -n "${APPIMAGE_EXTRACT_AND_RUN:-}" ] || grep -q '/\.mount_' /proc/mounts; then
   cp /tmp/screen/Xvfb_screen0 screen.xwd

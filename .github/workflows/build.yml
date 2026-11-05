@@ -31,13 +31,16 @@ on:
     paths:
       - '*.cpp'
       - '*.rc'
+      - '*.qrc'
       - 'Makefile'
       - 'CMakeLists.txt'
       - 'hello_qt.desktop'
       - 'hello_qt.svg'
       - 'hello_qt.html'
+      - 'icons/**'
       - '.github/appimage.sh'
       - '.github/appimage-test.sh'
+      - '.github/exe-icon.py'
       - '.github/licenses.sh'
       - '.github/qt.sh'
       - '.github/wasm-test.py'
@@ -121,6 +124,12 @@ jobs:
             fi
           done
 
+      # The icon (version.rc) in both .exe files, with an image of each size, in the resources by the name
+      # that hello.cpp and Qt load it by (.github/exe-icon.py, with the runner's Python)
+      - name: Icon check
+        shell: bash
+        run: python .github/exe-icon.py hello.exe build/hello_qt.exe
+
       # A folder that runs without MSYS2: hello_qt.exe, the Qt plugins it loads, then every MSYS2 DLL
       # that the folder's files import, until each import is in the folder or in Windows.
       - name: Bundle hello_qt
@@ -191,6 +200,15 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+
+      # The icons in icons/ are what icons/make.py makes of hello_qt.svg: they were made from the SVG and the
+      # script as they are now (sources.sha256 has their SHA-256).
+      - name: Icons check
+        run: |
+          if ! sha256sum -c icons/sources.sha256; then
+            echo "::error::hello_qt.svg or icons/make.py changed after the icons were made: run python3 icons/make.py"
+            exit 1
+          fi
 
       # The runner has the compiler and CMake.
       - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
@@ -275,13 +293,14 @@ jobs:
 
       # On this runner's Ubuntu 24.04 with FUSE, and in containers of Ubuntu 22.04, Debian 12, the newest
       # Fedora and AlmaLinux 9 (glibc 2.34, like RHEL 9), where it extracts itself (.github/appimage-test.sh):
-      # each time still running after 8 seconds, and the screen, which OCR reads, shows its Hello, World! If
-      # it fails, the end of its output becomes an annotation. The runner gets FUSE and what
+      # each time still running after 8 seconds, and the screen, which OCR reads, shows its Hello, World! On
+      # the runner, the window also has to have the app's icon. If it fails, the end of its output becomes
+      # an annotation. The runner gets FUSE, xprop (x11-utils), which reads the window's icon, and what
       # appimage-test.sh installs in the containers.
       - name: Smoke test
         run: |
-          sudo apt-get install -y fuse3 xvfb libgl1 libegl1 libx11-xcb1 fonts-dejavu-core tesseract-ocr netpbm \
-            > /dev/null
+          sudo apt-get install -y fuse3 xvfb x11-utils libgl1 libegl1 libx11-xcb1 fonts-dejavu-core tesseract-ocr \
+            netpbm > /dev/null
           for image in '' ubuntu:22.04 debian:12 fedora:latest almalinux:9; do
             if [ -z "$image" ]; then
               set -- sh .github/appimage-test.sh
@@ -302,7 +321,8 @@ jobs:
               sed -n '/[^[:space:]]/p' ocr.txt | head -n 8 | sed 's/^/::error::/'
               exit 1
             fi
-            echo "::notice::$system: the screen shows $(grep -m 1 Hello ocr.txt)"
+            icon=$(sed -n "s/^window icon: /; the window's icon: /p" test.txt) # on the runner
+            echo "::notice::$system: the screen shows $(grep -m 1 Hello ocr.txt)$icon"
           done
 
       - uses: actions/upload-artifact@v7
@@ -346,6 +366,14 @@ jobs:
           done
           sh .github/licenses.sh macos build/hello_qt.app qt/macos
           codesign --force --deep --sign - build/hello_qt.app
+
+      # The icon (icons/hello_qt.icns), which the Info.plist names, and which iconutil can take apart into
+      # its images
+      - name: Icon check
+        run: |
+          icon=$(plutil -extract CFBundleIconFile raw build/hello_qt.app/Contents/Info.plist)
+          iconutil -c iconset -o icon.iconset build/hello_qt.app/Contents/Resources/$icon
+          echo "::notice::hello_qt.app's icon is $icon, with $(ls icon.iconset | wc -l | tr -d ' ') images"
 
       # On Apple silicon, and the Intel half through Rosetta: still running after 10 seconds, and every
       # library it loaded (dyld lists them) is in the app or macOS. The macos-intel job starts the Intel half
@@ -451,6 +479,18 @@ jobs:
             exit 1
           fi
 
+      # The icon, which Xcode made from the asset catalog (icons/Assets.xcassets): in Assets.car, under the
+      # name that the Info.plist gives it
+      - name: Icon check
+        run: |
+          app=build-ios/Release-iphoneos/hello_qt.app
+          name=$(plutil -extract CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName raw $app/Info.plist || :)
+          if [ "$name" != AppIcon ] || [ ! -s $app/Assets.car ]; then
+            echo "::error::hello_qt.app has no icon AppIcon in Assets.car (the Info.plist names '$name')"
+            exit 1
+          fi
+          echo "::notice::hello_qt.app's icon is $name, in Assets.car ($(du -k $app/Assets.car | cut -f 1) KB)"
+
       # The Simulator app in a simulated iPhone with the newest iOS here: still running after 10 seconds, and
       # a screenshot of it.
       - name: Smoke test
@@ -547,6 +587,18 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
           $tools/apksigner sign --ks debug.keystore --ks-pass pass:android --out hello_qt-android.apk aligned.apk
           $tools/apksigner verify --print-certs hello_qt-android.apk
+
+      # The launcher icon (icons/android/res), which the manifest names: an adaptive icon, as aapt2 shows it
+      - name: Icon check
+        run: |
+          tools=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -n 1)
+          icon=$($tools/aapt2 dump badging hello_qt-android.apk | sed -n "s/^application: .* icon='\([^']*\)'.*/\1/p")
+          if [ -z "$icon" ] || ! $tools/aapt2 dump xmltree --file "$icon" hello_qt-android.apk |
+              grep -q 'E: adaptive-icon'; then
+            echo "::error::hello_qt-android.apk's launcher icon isn't the adaptive icon, but '$icon'"
+            exit 1
+          fi
+          echo "::notice::hello_qt-android.apk's launcher icon is $icon, an adaptive icon"
 
       # In the Android emulator, with Android 16 (KVM makes it fast): still running after 10 seconds, and a
       # screenshot of it, which has to show its Hello, World!
@@ -677,8 +729,9 @@ jobs:
           sh .github/licenses.sh wasm page qt/wasm_singlethread
 
       # From a local web server, in the runner's Google Chrome, which Playwright drives (.github/wasm-test.py):
-      # the page has to start hello_qt, and the screenshot of it, which OCR reads, has to show its Hello,
-      # World! (the window's title is Hello World, without the comma and the !).
+      # the page has to start hello_qt, whose window has to have the app's icon, and the screenshot of it,
+      # which OCR reads, has to show its Hello, World! (the window's title is Hello World, without the comma
+      # and the !).
       - name: Smoke test
         run: |
           sudo apt-get install -y tesseract-ocr > /dev/null
@@ -698,7 +751,8 @@ jobs:
             exit 1
           fi
           echo "::notice::$(sed -n 's/^browser: //p' test.txt): the page shows" \
-            "$(grep -m 1 -E 'Hello, World|World!' ocr.txt)"
+            "$(grep -m 1 -E 'Hello, World|World!' ocr.txt); the window's icon:" \
+            "$(sed -n 's/^window icon: //p' test.txt)"
 
       # The page's files in a zip, for the release, and as GitHub Pages takes them, for the pages job
       - name: Package hello_qt-wasm.zip

@@ -12,9 +12,9 @@ VERSION_NUMBERS := $(shell echo $(VERSION) | sed -E 's/^([0-9]+)\.([0-9]+)\.([0-
 hello.exe: hello.cpp version.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ -mwindows
 
-# The version resource (version.rc). version.txt holds the version and is only rewritten when that
-# changes, so a new commit or tag makes version.o and hello.exe again.
-version.o: version.rc version.txt
+# The resources (version.rc): the icon and the version. version.txt holds the version and is only
+# rewritten when that changes, so a new commit or tag makes version.o and hello.exe again.
+version.o: version.rc version.txt icons/hello_qt.ico
 	windres -DNAME=hello -DVERSION=$(VERSION) -DVERSION_NUMBERS=$(VERSION_NUMBERS) $< $@
 
 version.txt: FORCE
