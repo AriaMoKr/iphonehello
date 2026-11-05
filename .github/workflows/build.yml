@@ -647,18 +647,28 @@ jobs:
             exit 1
           fi
           # OCR reads the screenshot. Without the app's text, dialogs are closed and it is taken again, up to
-          # three times in all.
+          # six times in about a minute, for an emulator that is slow to draw the app.
           sudo apt-get install -y tesseract-ocr > /dev/null
-          for i in 1 2 3; do
+          for i in 1 2 3 4 5 6; do
             $adb exec-out screencap -p > hello_qt-android-emulator.png
             tesseract hello_qt-android-emulator.png - > ocr.txt 2> /dev/null || :
             grep -q Hello ocr.txt && break
             $adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS > /dev/null
-            sleep 5
+            sleep 10
           done
           if ! grep -q Hello ocr.txt; then
             echo "::error::The screenshot doesn't show Hello, World!, but this (OCR):"
             sed -n '/[^[:space:]]/p' ocr.txt | head -n 8 | sed 's/^/::error::/'
+            # What the screenshot is, what Android says of the screen (Awake, or Asleep or Dozing when it is
+            # off) and of the window in front, and the screenshot itself, smaller, in base64 notices, which
+            # a script can join into the image again without the GitHub login that uploaded files need
+            { echo "screenshot: $(file -b hello_qt-android-emulator.png)"
+              $adb shell dumpsys power | grep -E '^ *(mWakefulness|mScreenOffTimeoutSetting)=' || :
+              $adb shell dumpsys window | grep -m 1 'mCurrentFocus=' || :; } | tr -d '\r' | sed 's/^ */::warning::/'
+            { sudo apt-get install -y imagemagick > /dev/null &&
+              convert hello_qt-android-emulator.png -resize 270x -quality 50 screenshot.jpg &&
+              base64 < screenshot.jpg | tr -d '\n' | fold -w 3900 | head -n 10 |
+                awk '{ print "::notice title=screenshot " NR "::" $0 }'; } || :
             exit 1
           fi
           echo "::notice::The screenshot shows $(grep -m 1 Hello ocr.txt)"
